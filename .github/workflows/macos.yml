@@ -1,0 +1,48 @@
+name: macos
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: dmg (Apple silicon)
+    runs-on: macos-26 # Xcode 26 compiles the Icon Composer icon (icons/Push.icon)
+    permissions:
+      contents: write # attach the dmg to the release
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version "^2.12" --locked
+
+      # No Developer ID certificate in the runner's keychain, so the script signs ad-hoc.
+      - name: Build
+        run: scripts/build-macos.sh
+
+      - name: Make the dmg
+        run: |
+          mkdir dmg
+          ditto src-tauri/target/release/bundle/macos/Push.app dmg/Push.app
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname Push -srcfolder dmg -format UDZO "Push_${GITHUB_REF_NAME#v}_aarch64.dmg"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: push-macos-aarch64
+          path: Push_*.dmg
+          if-no-files-found: error
+
+      - name: Attach to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: Push_*.dmg
+          fail_on_unmatched_files: true
