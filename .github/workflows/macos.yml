@@ -23,9 +23,38 @@ jobs:
       - name: Install tauri-cli
         run: cargo install tauri-cli --version "^2.12" --locked
 
-      # No Developer ID certificate in the runner's keychain, so the script signs ad-hoc.
+      # Puts the Developer ID certificate in a throwaway keychain, and the App Store Connect API key on disk.
+      - name: Set up signing
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -hex 16)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          base64 --decode <<<"$APPLE_CERTIFICATE" > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          rm "$RUNNER_TEMP/cert.p12"
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/api-key.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/api-key.p8" >> "$GITHUB_ENV"
+
+      # Signs with the Developer ID (failing if it's missing), then Tauri notarizes and staples the app.
       - name: Build
+        env:
+          PUSH_SIGN_IDENTITY: "Developer ID Application: Abram Industries Pty ltd (4TZBGP972A)"
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: scripts/build-macos.sh
+
+      - name: Check notarization
+        run: |
+          xcrun stapler validate src-tauri/target/release/bundle/macos/Push.app
+          spctl --assess --type execute -vv src-tauri/target/release/bundle/macos/Push.app
 
       - name: Make the dmg
         run: |

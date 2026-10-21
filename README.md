@@ -81,9 +81,7 @@ Open `https://share.example.com/healthz` in your browser. It should say `ok`. If
 
 Download it from the [latest release](https://github.com/itsfutsy/push/releases/latest).
 
-- **Mac** (Apple silicon, macOS 14 or later): open the `.dmg` and drag Push into Applications. The first time you
-  open it, macOS warns that it can't check the app. Close the warning, go to **System Settings > Privacy & Security**,
-  scroll down and click **Open Anyway**.
+- **Mac** (Apple silicon, macOS 14 or later): open the `.dmg` and drag Push into Applications.
 - **Windows** (10 or 11): run the `x64-setup.exe` installer. If Windows SmartScreen warns you, click
   **More info > Run anyway**. See [Windows notes](#windows-notes).
 - **Linux**: install the `.deb`, or run the `.AppImage`. See [Linux notes](#linux-notes).
@@ -214,14 +212,6 @@ Yes. Install the app on each one and give them the same server address and token
 <br>
 Only what your server costs. The server is one small program, so the cheapest VPS is plenty. Storage is just your
 files.
-</details>
-
-<details>
-<summary><b>macOS asks for Screen Recording permission again after an update.</b></summary>
-<br>
-The app isn't signed with an Apple Developer ID yet, so macOS treats each new version as a new app. Allow it again in
-System Settings. If you build the app yourself, set <code>PUSH_SIGN_IDENTITY</code> to your own signing identity to
-avoid this.
 </details>
 
 <details>
