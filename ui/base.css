@@ -55,8 +55,8 @@ html {
   font: 13px/16px var(--font); color: var(--label); background: transparent;
   height: 100%; overflow: hidden; -webkit-user-select: none; cursor: default; -webkit-text-size-adjust: none;
 }
-/* Linux has no window material; Reduce Transparency makes the native material opaque anyway */
-html.linux { background: var(--bg-window); }
+/* Linux and Windows have no window material; Reduce Transparency makes the native material opaque anyway */
+html.plain { background: var(--bg-window); }
 @media (prefers-reduced-transparency: reduce) { html { background: var(--bg-window); } }
 body { margin: 0; height: 100%; }
 img, svg, a { -webkit-user-drag: none; }

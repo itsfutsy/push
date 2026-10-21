@@ -3,7 +3,6 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use image::DynamicImage;
 use tauri::http::{Response, StatusCode, header};
@@ -16,7 +15,7 @@ const EDGE: u32 = 480;
 /// Images up to this size are decoded in process; bigger ones go to Quick Look (macOS).
 const DECODE_MAX: u64 = 32 * 1024 * 1024;
 #[cfg(target_os = "macos")]
-const QUICK_LOOK_TIMEOUT: Duration = Duration::from_secs(20);
+const QUICK_LOOK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
 fn path(dir: &Path, id: &str) -> PathBuf {
     dir.join(id)

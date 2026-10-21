@@ -1,7 +1,7 @@
 // Main window: drop zone, recent uploads and the settings view. All work happens in Rust;
 // this renders state from get_info and the uploads / upload-progress / settings / navigate events.
 import {
-  invoke, listen, onDragDrop, setPlatform, isMac, icon, kindIcon, formatSize, formatProgress, percent,
+  invoke, listen, onDragDrop, setPlatform, isMac, isWindows, icon, kindIcon, formatSize, formatProgress, percent,
   relativeTime, shortUrl, hostOf, formatShortcut, formatModifiers, BOTH_COMMANDS, announce, setRing, fadeIn, motion, reducedMotion, fitMiddle,
 } from './lib.js';
 
@@ -501,8 +501,10 @@ function renderSettings() {
   const { settings, hasToken, shortcutSupported, version } = state.info;
   const url = $('server-url');
   if (document.activeElement !== url) url.value = settings.serverUrl;
-  $('token').placeholder = hasToken ? (isMac() ? 'Saved in Keychain' : 'Saved') : 'Paste token';
-  $('token-note').textContent = isMac() ? 'Your token is stored in your Keychain.' : 'Your token is stored only on this computer.';
+  const vault = isMac() ? 'Keychain' : isWindows() ? 'Credential Manager' : '';
+  $('token').placeholder = hasToken ? (vault ? `Saved in ${vault}` : 'Saved') : 'Paste token';
+  $('token-note').textContent = isMac() ? 'Your token is stored in your Keychain.'
+    : isWindows() ? 'Your token is stored in Windows Credential Manager.' : 'Your token is stored only on this computer.';
   $('shortcut-row').hidden = !shortcutSupported;
   $('command-row').hidden = shortcutSupported;
   $('command-note').hidden = shortcutSupported;
@@ -649,7 +651,7 @@ function onRecorderKey(e) {
   if (e.key === 'Escape') { stopRecording(); return; }
   if (plain && (e.key === 'Backspace' || e.key === 'Delete')) { saveShortcut(null); return; }
   if (!e.metaKey && !e.ctrlKey) {
-    setFieldError('shortcut', isMac() ? 'Include ⌘ or ⌃ in the shortcut.' : 'Include Ctrl or Super in the shortcut.');
+    setFieldError('shortcut', isMac() ? 'Include ⌘ or ⌃ in the shortcut.' : `Include Ctrl or ${isWindows() ? 'Win' : 'Super'} in the shortcut.`);
     return;
   }
   const accel = [e.metaKey && (isMac() ? 'Command' : 'Super'), e.ctrlKey && 'Control', e.altKey && 'Alt', e.shiftKey && 'Shift', e.code];

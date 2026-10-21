@@ -73,8 +73,8 @@ pub fn save_uploads(path: &Path, done: &[Upload]) -> std::io::Result<()> {
     write_atomic(path, &serde_json::to_vec(done)?)
 }
 
-/// The upload token. It lives in the macOS Keychain or the Linux Secret Service (with a
-/// 0600 file fallback) and never reaches JavaScript.
+/// The upload token. It lives in the macOS Keychain, Windows Credential Manager or the Linux
+/// Secret Service (with a 0600 file fallback) and never reaches JavaScript.
 pub struct Token {
     config_dir: PathBuf,
     /// `Some(token or None)` once read.
@@ -134,12 +134,16 @@ fn entry() -> keyring::Result<keyring::Entry> {
     keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_USER)
 }
 
+/// Where `entry` lives, for error messages.
+#[cfg(not(target_os = "linux"))]
+const STORE: &str = if cfg!(windows) { "Credential Manager" } else { "the Keychain" };
+
 #[cfg(not(target_os = "linux"))]
 fn load_token(_dir: &Path) -> Result<Option<String>, String> {
     match entry().and_then(|e| e.get_password()) {
         Ok(token) => Ok(Some(token)),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(format!("Couldn’t read the token from the Keychain ({e}).")),
+        Err(e) => Err(format!("Couldn’t read the token from {STORE} ({e}).")),
     }
 }
 
@@ -147,7 +151,7 @@ fn load_token(_dir: &Path) -> Result<Option<String>, String> {
 fn save_token(_dir: &Path, token: &str) -> Result<(), String> {
     entry()
         .and_then(|e| e.set_password(token))
-        .map_err(|e| format!("Couldn’t save the token to the Keychain ({e})."))
+        .map_err(|e| format!("Couldn’t save the token to {STORE} ({e})."))
 }
 
 #[cfg(target_os = "linux")]
@@ -162,7 +166,7 @@ fn load_token(dir: &Path) -> Result<Option<String>, String> {
 }
 
 /// The token when the keyring couldn't give one, given what the fallback file holds.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 fn keyring_fallback(error: keyring::Error, file: Option<String>) -> Result<Option<String>, String> {
     match error {
         // No Secret Service, or no entry there: the private file is the only place left.

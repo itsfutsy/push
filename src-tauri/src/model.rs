@@ -112,7 +112,7 @@ pub struct Connection {
     pub message: String,
 }
 
-/// What the HUD shows (macOS only; Linux uses notifications).
+/// What the HUD shows (macOS only; elsewhere Push uses notifications).
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -140,7 +140,13 @@ pub struct Progress {
     pub total: u64,
 }
 
-pub const PLATFORM: &str = if cfg!(target_os = "macos") { "macos" } else { "linux" };
+pub const PLATFORM: &str = if cfg!(target_os = "macos") {
+    "macos"
+} else if cfg!(windows) {
+    "windows"
+} else {
+    "linux"
+};
 
 /// 10 base62 characters from the thread-local CSPRNG (seeded from the OS).
 pub fn new_id() -> String {

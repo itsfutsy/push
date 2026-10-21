@@ -6,11 +6,13 @@
 
 **Screenshot. Upload. Link. On your own server.**
 
-Press <kbd>⇧</kbd><kbd>⌘</kbd><kbd>2</kbd>, drag over anything on screen, and a private link is on your clipboard a second later.<br>
+Press <kbd>⇧</kbd><kbd>⌘</kbd><kbd>2</kbd> (<kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>2</kbd> on Windows and Linux), drag over anything on screen,<br>
+and a private link is on your clipboard a second later.<br>
 The file lives on a server you own. No accounts, no subscriptions, no one else's cloud.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-4b5563)](LICENSE)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111827?logo=apple&logoColor=white)
+![Windows 10+](https://img.shields.io/badge/Windows-10%2B-111827?logo=windows&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-deb%20%7C%20AppImage-111827?logo=linux&logoColor=white)
 ![Self-hosted](https://img.shields.io/badge/self--hosted-one%20container-2563eb)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/futsy)
@@ -36,8 +38,8 @@ account, a subscription and a privacy policy. Push gives you the same one-second
   Move hosts whenever you like.
 - **Any size.** Big screen recordings upload in resumable 8 MB chunks, so a dropped connection picks up where it left
   off, and it works happily behind Cloudflare.
-- **Feels native.** Lives in the menu bar. Finder's Share menu, drag and drop, a Library with Quick Look style
-  previews, light and dark mode, and keyboard shortcuts everywhere.
+- **Feels native.** Lives in the menu bar or system tray on macOS, Windows and Linux. Finder's Share menu, Send to on
+  Windows, drag and drop, a Library with Quick Look style previews, light and dark mode, and keyboard shortcuts everywhere.
 - **Links that unfurl.** Images and videos preview inline in Slack, Discord, X, Telegram and WhatsApp, and play right in
   the browser.
 
@@ -101,24 +103,29 @@ scripts/build-macos.sh --install
 
 This builds `Push.app`, installs it in `/Applications`, and turns on its Share extension.
 
+**Windows 10 or 11.** Download the `x64-setup.exe` installer from
+[Releases](https://github.com/itsfutsy/push/releases) and run it. It isn't code signed yet, so if SmartScreen warns,
+choose **More info > Run anyway**. See [Windows notes](#windows-notes).
+
 **Linux.** Grab the `.deb` or `.AppImage` from [Releases](https://github.com/itsfutsy/push/releases), or build it
 yourself (see [Linux notes](#linux-notes)).
 
 ### 3. Connect
 
 Open **Push > Settings**, enter `https://share.example.com`, and paste your token. When the status says
-**Connected**, press <kbd>⇧</kbd><kbd>⌘</kbd><kbd>2</kbd>. The first time, macOS asks for Screen Recording permission:
-allow Push in System Settings > Privacy & Security > Screen & System Audio Recording.
+**Connected**, press <kbd>⇧</kbd><kbd>⌘</kbd><kbd>2</kbd> (<kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>2</kbd> on Windows and
+Linux). The first time, macOS asks for Screen Recording permission: allow Push in System Settings > Privacy & Security >
+Screen & System Audio Recording.
 
 ## Using Push
 
 | To | Do this |
 |---|---|
-| Capture part of the screen | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>2</kbd> and drag. Press <kbd>Space</kbd> to capture a window instead, <kbd>Esc</kbd> to cancel. |
-| Upload a file | Drop it on the Push window, click the drop area, use **Share > Push** in Finder, or drop it on Push.app. |
+| Capture part of the screen | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>2</kbd> and drag. Press <kbd>Space</kbd> to capture a window instead, <kbd>Esc</kbd> to cancel. On Windows, <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>2</kbd> opens the snipping bar, with window and full screen modes. |
+| Upload a file | Drop it on the Push window, click the drop area, use **Share > Push** in Finder, or drop it on Push.app. On Windows, right-click it and choose **Send to > Push**. |
 | Upload several files | Drop them together. All their links go on the clipboard, one per line. |
 | Copy a link again | Click a row in Recent, or preview a file in the Library and choose **Copy Link**. |
-| Browse everything | **Show All** in the Push window, or **Library** in the menu bar. Filter by type, search by name, press <kbd>Space</kbd> to preview and the arrow keys to step through. |
+| Browse everything | **Show All** in the Push window, or **Library** in the menu bar or tray. Filter by type, search by name, press <kbd>Space</kbd> to preview and the arrow keys to step through. |
 | Delete | Hover a row and choose Delete, or select tiles in the Library (<kbd>⌘</kbd>-click, <kbd>⇧</kbd>-click, <kbd>⌘</kbd><kbd>A</kbd>) and choose Delete. The link stops working right away. |
 | Change the shortcut | Settings > Capture Shortcut. Holding both <kbd>⌘</kbd> keys works too (it needs Input Monitoring permission). |
 
@@ -140,7 +147,8 @@ random name and serves it to whoever has the link. That's the whole system.
 
 - **Only you can upload.** Every write needs your token, checked before the server reads any data. Wrong and missing
   tokens get identical responses, compared in constant time.
-- **The token stays put.** It's stored in your Keychain (Secret Service on Linux) and never reaches the app's web view.
+- **The token stays put.** It's stored in your Keychain (Credential Manager on Windows, Secret Service on Linux) and
+  never reaches the app's web view.
   The app never follows redirects, so the token can't be forwarded anywhere else.
 - **Links can't be guessed.** File names are 10 random characters (about 60 bits) from the operating system's secure
   random generator. There are no listings, sitemaps or index pages.
@@ -175,17 +183,19 @@ Storage is just your files.
 </details>
 
 <details>
-<summary><b>Windows?</b></summary>
-<br>
-Not yet. The app is built with Tauri, so a Windows port is possible. Contributions are welcome.
-</details>
-
-<details>
 <summary><b>macOS keeps asking for Screen Recording permission after I rebuild.</b></summary>
 <br>
 Builds without a Developer ID certificate are signed ad-hoc, and macOS treats each new build as a new app. Allow it
 again, or set <code>PUSH_SIGN_IDENTITY</code> to your own signing identity before building.
 </details>
+
+## Windows notes
+
+- Capturing uses Windows' own snipping bar (the one behind <kbd>Win</kbd><kbd>Shift</kbd><kbd>S</kbd>), so it needs
+  Snipping Tool, which Windows includes. Depending on Snipping Tool's settings, Windows may also keep a copy in
+  Pictures > Screenshots.
+- Upload from File Explorer with **Send to > Push**, or from a terminal with `push FILE`.
+- To build it yourself, install [Rust](https://rustup.rs) and run `cargo tauri build --bundles nsis` in `src-tauri`.
 
 ## Linux notes
 

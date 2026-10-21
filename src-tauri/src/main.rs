@@ -1,3 +1,6 @@
+// Release builds on Windows are GUI apps: no console window.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 fn main() {
     // WebKitGTK's DMA-BUF renderer shows a blank window on many NVIDIA setups.
     #[cfg(target_os = "linux")]

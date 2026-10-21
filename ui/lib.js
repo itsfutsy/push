@@ -9,14 +9,18 @@ export const onDragDrop = (fn) => tauri.webview.getCurrentWebview().onDragDropEv
 // An upload's preview image, served by core (preview.rs). The harness has no such scheme.
 export const previewUrl = (id) => tauri.previewUrl?.(id) ?? `preview://localhost/${id}`;
 
-// Platform: a synchronous guess from the user agent, confirmed by get_info.
-let mac = !/Linux|X11/.test(navigator.userAgent);
+// Platform ("macos", "windows" or "linux"): a synchronous guess from the user agent, confirmed by get_info.
+let platform = /Windows/.test(navigator.userAgent) ? 'windows' : /Linux|X11/.test(navigator.userAgent) ? 'linux' : 'macos';
+let mac = platform === 'macos';
 export const isMac = () => mac;
-export function setPlatform(platform) {
-  mac = platform !== 'linux';
-  document.documentElement.classList.toggle('linux', !mac);
+export const isWindows = () => platform === 'windows';
+export function setPlatform(name) {
+  platform = name;
+  mac = name === 'macos';
+  // Only macOS has the window material and the inset title bar.
+  document.documentElement.classList.toggle('plain', !mac);
 }
-setPlatform(mac ? 'macos' : 'linux');
+setPlatform(platform);
 
 addEventListener('contextmenu', (e) => {
   if (!e.target.closest('input')) e.preventDefault();
@@ -130,7 +134,7 @@ export function hostOf(url) {
 }
 
 // Accelerators ("CommandOrControl+Shift+Digit2") for display: "⇧⌘2" on macOS (Apple order ⌃⌥⇧⌘),
-// "Ctrl+Shift+2" on Linux.
+// "Ctrl+Shift+2" elsewhere.
 const MODS = {
   commandorcontrol: 'cmdOrCtrl', cmdorctrl: 'cmdOrCtrl', commandorctrl: 'cmdOrCtrl', cmdorcontrol: 'cmdOrCtrl',
   command: 'cmd', cmd: 'cmd', super: 'cmd', meta: 'cmd',
@@ -143,16 +147,16 @@ const KEY_NAMES = {
   Quote: '\'', Comma: ',', Period: '.', Slash: '/', Backquote: '`',
   Home: '↖', End: '↘', PageUp: '⇞', PageDown: '⇟',
 };
-const LINUX_KEY_NAMES = { Enter: 'Enter', Tab: 'Tab', Backspace: 'Backspace', Delete: 'Delete', Escape: 'Esc',
+const PLAIN_KEY_NAMES = { Enter: 'Enter', Tab: 'Tab', Backspace: 'Backspace', Delete: 'Delete', Escape: 'Esc',
   ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Home: 'Home', End: 'End', PageUp: 'PgUp', PageDown: 'PgDn' };
 
 export function keyName(code) {
-  return (!mac && LINUX_KEY_NAMES[code]) || KEY_NAMES[code] || code.replace(/^(Key|Digit|Numpad)/, '');
+  return (!mac && PLAIN_KEY_NAMES[code]) || KEY_NAMES[code] || code.replace(/^(Key|Digit|Numpad)/, '');
 }
 
 export function formatModifiers(set) {
   if (mac) return ['ctrl', 'alt', 'shift', 'cmd'].filter((m) => set.has(m)).map((m) => ({ ctrl: '⌃', alt: '⌥', shift: '⇧', cmd: '⌘' })[m]).join('');
-  return ['ctrl', 'alt', 'shift', 'cmd'].filter((m) => set.has(m)).map((m) => ({ ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', cmd: 'Super' })[m]).join('+');
+  return ['ctrl', 'alt', 'shift', 'cmd'].filter((m) => set.has(m)).map((m) => ({ ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', cmd: isWindows() ? 'Win' : 'Super' })[m]).join('+');
 }
 
 // Both Command keys held together (macOS). The app watches for it itself; it isn't a real accelerator.

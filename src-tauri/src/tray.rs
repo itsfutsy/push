@@ -1,4 +1,4 @@
-//! The menu bar item. Left click opens the menu on both platforms.
+//! The menu bar (tray) item. Left click opens the menu everywhere.
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -44,8 +44,11 @@ pub fn build(app: &AppHandle) -> tauri::Result<Items> {
 
     #[cfg(target_os = "macos")]
     let icon = tauri::include_image!("icons/tray.png");
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     let icon = tauri::include_image!("icons/tray-linux.png");
+    // Windows tray icons are in colour, and the taskbar may be light or dark.
+    #[cfg(windows)]
+    let icon = tauri::include_image!("icons/32x32.png");
 
     let tray = TrayIconBuilder::with_id("tray")
         .icon(icon)
@@ -73,7 +76,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Items> {
             "quit" => app.exit(0),
             _ => {}
         });
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "linux"))]
     let tray = tray.tooltip("Push");
     tray.build(app)?;
     Ok(Items { capture, copy_last })

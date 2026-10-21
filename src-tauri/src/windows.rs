@@ -1,4 +1,4 @@
-//! The main window, the Library, the macOS HUD and Linux notifications.
+//! The main window, the Library, the macOS HUD and notifications on Linux and Windows.
 //!
 //! Never call these while holding a `Core` lock: window calls block on the main thread.
 
@@ -93,13 +93,13 @@ pub fn announce(app: &AppHandle, upload: &Upload, started: bool) {
             hud::update(app, upload);
         }
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = started;
         if matches!(upload.status, crate::model::Status::Done | crate::model::Status::Failed) {
             let focused = app.get_webview_window("main").is_some_and(|w| w.is_focused().unwrap_or(false));
             if !focused {
-                linux::notify_upload(app, upload);
+                notify::upload(app, upload);
             }
         }
     }
@@ -118,15 +118,15 @@ pub fn forget(app: &AppHandle, id: &str) {
 pub fn permission_needed(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     hud::show(app, HudPayload::Permission);
-    #[cfg(target_os = "linux")]
+    #[cfg(not(target_os = "macos"))]
     let _ = app;
 }
 
-/// A capture tool failed. Linux shows a notification; the macOS HUD has no state for this.
+/// A capture tool failed. Linux and Windows show a notification; the macOS HUD has no state for this.
 pub fn capture_failed(reason: &str) {
     eprintln!("push: capture failed: {reason}");
-    #[cfg(target_os = "linux")]
-    linux::notify("Couldn’t capture the screen".into(), reason.to_owned());
+    #[cfg(not(target_os = "macos"))]
+    notify::show("Couldn’t capture the screen".into(), reason.to_owned());
 }
 
 pub fn hud_payload(app: &AppHandle) -> Option<HudPayload> {
@@ -140,7 +140,7 @@ pub fn hud_hovered(app: &AppHandle) -> bool {
     {
         hud::hovered(app)
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(not(target_os = "macos"))]
     {
         let _ = app;
         false
@@ -150,7 +150,7 @@ pub fn hud_hovered(app: &AppHandle) -> bool {
 pub fn hide_hud(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     hud::hide(app);
-    #[cfg(target_os = "linux")]
+    #[cfg(not(target_os = "macos"))]
     let _ = app;
 }
 
@@ -160,7 +160,7 @@ pub fn capture_ended(app: &AppHandle) {
     if let Some(payload) = hud_payload(app) {
         hud::show(app, payload);
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(not(target_os = "macos"))]
     let _ = app;
 }
 
@@ -173,7 +173,7 @@ pub fn hud_loaded(app: &AppHandle) {
             hud::reveal(app, &window);
         }
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(not(target_os = "macos"))]
     let _ = app;
 }
 
@@ -306,25 +306,32 @@ mod hud {
     }
 }
 
-#[cfg(target_os = "linux")]
-mod linux {
+#[cfg(not(target_os = "macos"))]
+mod notify {
     use tauri::{AppHandle, Manager};
 
     use crate::model::{ErrorKind, Upload};
 
-    pub fn notify(summary: String, body: String) {
-        // notify-rust blocks on D-Bus.
+    pub fn show(summary: String, body: String) {
+        // notify-rust blocks on D-Bus (and on WinRT).
         std::thread::spawn(move || {
-            let shown = notify_rust::Notification::new().appname("Push").icon("push").summary(&summary).body(&body).show();
-            if let Err(e) = shown {
+            let mut notification = notify_rust::Notification::new();
+            notification.appname("Push").icon("push").summary(&summary).body(&body);
+            // Toasts need the AppUserModelID the installer puts on the Start menu shortcut. Dev
+            // builds have none, so they borrow PowerShell's (notify-rust's default).
+            #[cfg(windows)]
+            if !cfg!(debug_assertions) {
+                notification.app_id("io.github.itsfutsy.push");
+            }
+            if let Err(e) = notification.show() {
                 eprintln!("push: notification failed: {e}");
             }
         });
     }
 
-    pub fn notify_upload(app: &AppHandle, upload: &Upload) {
+    pub fn upload(app: &AppHandle, upload: &Upload) {
         let Some(error) = &upload.error else {
-            return notify("Link copied".into(), upload.url.clone());
+            return show("Link copied".into(), upload.url.clone());
         };
         let title = match error.kind {
             ErrorKind::Auth => "Upload token not accepted".to_owned(),
@@ -337,6 +344,6 @@ mod linux {
             ErrorKind::Unsupported => format!("Can’t upload “{}”", upload.file_name),
             ErrorKind::Missing => "File not found".to_owned(),
         };
-        notify(title, error.message.clone());
+        show(title, error.message.clone());
     }
 }

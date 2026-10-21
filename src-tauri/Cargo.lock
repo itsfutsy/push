@@ -3368,6 +3368,7 @@ dependencies = [
 name = "push"
 version = "1.0.0"
 dependencies = [
+ "arboard",
  "ashpd",
  "base64 0.23.1",
  "chrono",
@@ -3389,6 +3390,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "url",
+ "windows-sys 0.61.2",
  "zbus",
 ]
 

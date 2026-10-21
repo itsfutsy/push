@@ -20,7 +20,7 @@
   --media-shadow: 0 20px 50px -16px rgba(0,0,0,.7);
 }}
 @media (prefers-reduced-transparency: reduce) { :root { --glass: var(--bg-content); --scrim: var(--bg-content); } }
-html, html.linux { background: var(--bg-content); }
+html, html.plain { background: var(--bg-content); }
 
 .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .library { position: absolute; inset: 0; container-type: inline-size; }
@@ -32,7 +32,7 @@ html, html.linux { background: var(--bg-content); }
 
 /* Toolbar */
 .toolbar { position: absolute; inset: 0 0 auto; z-index: 3; height: 52px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 92px; }
-.linux .toolbar { padding-left: 16px; }
+.plain .toolbar { padding-left: 16px; }
 /* The scroll edge: content softens as it passes under the toolbar */
 #library > .toolbar::before {
   content: ""; position: absolute; inset: 0 0 -26px; pointer-events: none;

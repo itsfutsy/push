@@ -1,7 +1,6 @@
 //! Interactive region capture. Each platform module provides `capture(out)`,
 //! which writes a PNG to exactly `out`; this module owns the folder, the file names and cleanup.
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -14,6 +13,10 @@ use linux as platform;
 mod macos;
 #[cfg(target_os = "macos")]
 use macos as platform;
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+use windows as platform;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Shot {
@@ -41,7 +44,7 @@ pub async fn capture_region(dir: &Path) -> Shot {
     shot
 }
 
-/// macOS: open System Settings > Screen & System Audio Recording. Linux: no-op.
+/// macOS: open System Settings > Screen & System Audio Recording. Elsewhere: no-op.
 pub fn open_permission_settings() {
     platform::open_permission_settings();
 }
@@ -51,15 +54,19 @@ pub fn shortcut_supported() -> bool {
     platform::shortcut_supported()
 }
 
-/// Creates `dir` (owner-only: captures can contain anything on screen) and returns an unused
-/// PNG path in it.
+/// Creates `dir` (owner-only: captures can contain anything on screen; on Windows the per-user
+/// cache folder already is) and returns an unused PNG path in it.
 async fn new_capture_path(dir: &Path) -> std::io::Result<PathBuf> {
-    tokio::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)
-        .await?;
-    tokio::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).await?;
+    let mut builder = tokio::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    builder.mode(0o700);
+    builder.create(dir).await?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tokio::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).await?;
+    }
     static SEQ: AtomicU32 = AtomicU32::new(0);
     let ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -74,6 +81,7 @@ async fn new_capture_path(dir: &Path) -> std::io::Result<PathBuf> {
 }
 
 /// True if `path` is a non-empty regular file.
+#[cfg(unix)]
 async fn has_image(path: &Path) -> bool {
     tokio::fs::metadata(path)
         .await
@@ -82,6 +90,7 @@ async fn has_image(path: &Path) -> bool {
 
 /// A one-line message for a tool that exited unsuccessfully: its first stderr line, else the
 /// exit code.
+#[cfg(unix)]
 fn failure(tool: &str, code: Option<i32>, stderr: &[u8]) -> String {
     let stderr = String::from_utf8_lossy(stderr);
     match (stderr.lines().map(str::trim).find(|l| !l.is_empty()), code) {
