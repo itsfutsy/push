@@ -15,9 +15,6 @@ tower-http = { version = "0.7.1", features = ["fs", "set-header", "trace"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt"] }
 
-[dev-dependencies]
-tokio = { version = "1.54", features = ["sync", "time"] }
-
 [profile.release]
 lto = "thin"
 strip = true

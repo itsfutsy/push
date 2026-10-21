@@ -3,7 +3,6 @@
 #
 #   scripts/check-linux.sh                       cargo check --all-targets
 #   scripts/check-linux.sh build                 any cargo arguments, e.g. a debug build that links
-#   scripts/check-linux.sh test --lib capture
 #   scripts/check-linux.sh clippy --all-targets
 #
 # The repo is mounted read-only and copied into the container (tauri-build writes src-tauri/gen).

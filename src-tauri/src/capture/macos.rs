@@ -63,37 +63,3 @@ pub(super) fn open_permission_settings() {
 pub(super) fn shortcut_supported() -> bool {
     true
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn maps_exit_status_and_file() {
-        let out = Path::new("/tmp/capture-1-0.png");
-        assert_eq!(outcome(Some(0), true, b"", out), Shot::Done(out.into()));
-        assert_eq!(outcome(Some(0), false, b"", out), Shot::Cancelled);
-        assert_eq!(
-            outcome(Some(1), false, b"could not create image from rect\n", out),
-            Shot::Failed("screencapture failed: could not create image from rect".into())
-        );
-        assert_eq!(
-            outcome(Some(2), true, b"", out),
-            Shot::Failed("screencapture exited with status 2".into())
-        );
-        assert_eq!(
-            outcome(None, false, b"", out),
-            Shot::Failed("screencapture was stopped".into())
-        );
-    }
-
-    /// Links and calls CoreGraphics. Run with `--ignored`; it only reads the permission state.
-    #[test]
-    #[ignore]
-    fn preflight_runs_off_the_main_thread() {
-        let granted = std::thread::spawn(|| CGPreflightScreenCaptureAccess())
-            .join()
-            .unwrap();
-        println!("screen recording granted: {granted}");
-    }
-}

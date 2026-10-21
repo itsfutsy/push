@@ -207,9 +207,8 @@ again, or set <code>PUSH_SIGN_IDENTITY</code> to your own signing identity befor
 | [`dev/`](dev) | A browser preview of the interface with mock data, for working on the UI without the app. |
 
 ```sh
-cd server && cargo test                              # server tests
-TOKEN=... scripts/test-server.sh                     # end-to-end against a running server
-cd src-tauri && cargo test && cargo tauri dev        # desktop app (PUSH_TOKEN=... skips the Keychain in debug builds)
+cd server && cargo run                               # server (needs PUSH_TOKEN, PUSH_PUBLIC_URL and PUSH_DATA_DIR)
+cd src-tauri && cargo tauri dev                      # desktop app (PUSH_TOKEN=... skips the Keychain in debug builds)
 python3 dev/serve.py                                 # UI preview: http://127.0.0.1:5174/dev/?s=list
 scripts/check-linux.sh                               # compile the desktop app for Linux in Docker
 ```

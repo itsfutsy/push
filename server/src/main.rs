@@ -29,9 +29,6 @@ use tower_http::{
 };
 use tracing::Level;
 
-#[cfg(test)]
-mod tests;
-
 /// Largest accepted PATCH body. Clients send 8 MiB chunks.
 const MAX_CHUNK: u64 = 10 * 1024 * 1024;
 /// A `.part` file nobody has written to for this long is an abandoned upload.

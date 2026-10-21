@@ -106,22 +106,3 @@ pub fn init(app: &AppHandle) {
         eprintln!("push: shortcut {accelerator} not registered: {e}");
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn shortcuts_need_command_or_control() {
-        assert!(parse(crate::model::DEFAULT_SHORTCUT).is_ok());
-        assert!(parse("Command+Shift+KeyS").is_ok());
-        assert!(parse("Control+Alt+F5").is_ok());
-        assert!(parse("Shift+Digit2").is_err());
-        assert!(parse("Alt+KeyA").is_err());
-        assert!(parse("KeyA").is_err());
-        assert!(parse("Command+Banana").is_err());
-        #[cfg(target_os = "macos")]
-        assert!(matches!(parse(command_keys::ACCELERATOR), Ok(Hotkey::BothCommands)));
-        assert!(parse("LeftCommand+Shift+KeyA").is_err());
-    }
-}

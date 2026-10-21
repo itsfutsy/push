@@ -123,12 +123,6 @@ curl -si https://share.example.com/api/ping | head -1                           
 curl -si -H "Authorization: Bearer $TOKEN" https://share.example.com/api/ping | head -1   # 204
 ```
 
-For a full end-to-end test (uploads about 40 MB of test files, then deletes them), from a clone of the repo:
-
-```sh
-BASE=https://share.example.com TOKEN=$TOKEN scripts/test-server.sh   # ends with "PASS: 19 checks"
-```
-
 ## Troubleshooting
 
 | Symptom | Fix |
