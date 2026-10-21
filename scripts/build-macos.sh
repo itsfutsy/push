@@ -67,8 +67,7 @@ if [[ "$INSTALL" == 0 ]]; then
   cat <<EOF
 
 Next: install it with scripts/build-macos.sh --install
-(or copy Push.app to /Applications, open it once, and turn on Push under System Settings >
-General > Login Items & Extensions > Extensions > Sharing)
+(or copy Push.app to /Applications and open it once)
 EOF
   exit 0
 fi

@@ -107,9 +107,6 @@ drag over part of your screen. The first time, macOS asks for permission to reco
 | Delete | Hover a file and choose Delete, or select files in the Library and choose Delete. The link stops working right away. |
 | Change the shortcut | **Settings > Capture Shortcut**. Holding both <kbd>⌘</kbd> keys works too (it needs Input Monitoring permission). |
 
-If Push is missing from Finder's Share menu, turn it on in **System Settings > General > Login Items & Extensions**,
-under **Extensions > Sharing**.
-
 ## Server guide
 
 ### Settings
