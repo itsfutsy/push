@@ -61,7 +61,8 @@ jobs:
           mkdir dmg
           ditto src-tauri/target/release/bundle/macos/Push.app dmg/Push.app
           ln -s /Applications dmg/Applications
-          hdiutil create -volname Push -srcfolder dmg -format UDZO "Push_${GITHUB_REF_NAME#v}_aarch64.dmg"
+          name="${GITHUB_REF_NAME#v}"
+          hdiutil create -volname Push -srcfolder dmg -format UDZO "Push_${name//\//-}_aarch64.dmg"
 
       - uses: actions/upload-artifact@v7
         with:
