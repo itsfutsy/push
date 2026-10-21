@@ -1,6 +1,6 @@
 [package]
 name = "push"
-version = "1.0.0"
+version = "0.9.0"
 description = "Private screenshot and file sharing"
 edition = "2024"
 rust-version = "1.90"
