@@ -1,0 +1,99 @@
+//! macOS: `/usr/sbin/screencapture -i`, gated on the Screen Recording permission.
+
+use std::path::Path;
+
+use tokio::process::Command;
+
+use super::{Shot, failure, has_image};
+
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    safe fn CGPreflightScreenCaptureAccess() -> bool;
+    /// Shows the system prompt the first time only; later calls return immediately.
+    safe fn CGRequestScreenCaptureAccess() -> bool;
+}
+
+const SCREEN_RECORDING_PANE: &str =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
+
+pub(super) async fn capture(out: &Path) -> Shot {
+    // Without permission screencapture still lets the user drag a region, then writes nothing.
+    let allowed = tauri::async_runtime::spawn_blocking(|| {
+        CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess()
+    })
+    .await
+    .unwrap_or(false);
+    if !allowed {
+        return Shot::NoPermission;
+    }
+    // -i interactive (Space toggles window mode), -x no sound, -o no window shadow,
+    // -r no DPI metadata (keeps Retina shots from showing at half size).
+    let result = Command::new("/usr/sbin/screencapture")
+        .args(["-i", "-x", "-o", "-r", "-t", "png"])
+        .arg(out)
+        .kill_on_drop(true)
+        .output()
+        .await;
+    match result {
+        Ok(o) => outcome(o.status.code(), has_image(out).await, &o.stderr, out),
+        Err(e) => Shot::Failed(format!("Couldn’t run screencapture: {e}")),
+    }
+}
+
+/// Exit 0 with a file is a shot. Exit 0 without one is a cancel: Esc, or Control held so the shot
+/// went to the clipboard. Anything else is an error (macOS 27 reports a missing permission as
+/// exit 1, which the preflight check normally rules out).
+fn outcome(code: Option<i32>, has_image: bool, stderr: &[u8], out: &Path) -> Shot {
+    match (code, has_image) {
+        (Some(0), true) => Shot::Done(out.to_path_buf()),
+        (Some(0), false) => Shot::Cancelled,
+        _ => Shot::Failed(failure("screencapture", code, stderr)),
+    }
+}
+
+pub(super) fn open_permission_settings() {
+    // On a thread so the caller never waits and the child is reaped.
+    std::thread::spawn(|| {
+        std::process::Command::new("/usr/bin/open")
+            .arg(SCREEN_RECORDING_PANE)
+            .status()
+    });
+}
+
+pub(super) fn shortcut_supported() -> bool {
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_exit_status_and_file() {
+        let out = Path::new("/tmp/capture-1-0.png");
+        assert_eq!(outcome(Some(0), true, b"", out), Shot::Done(out.into()));
+        assert_eq!(outcome(Some(0), false, b"", out), Shot::Cancelled);
+        assert_eq!(
+            outcome(Some(1), false, b"could not create image from rect\n", out),
+            Shot::Failed("screencapture failed: could not create image from rect".into())
+        );
+        assert_eq!(
+            outcome(Some(2), true, b"", out),
+            Shot::Failed("screencapture exited with status 2".into())
+        );
+        assert_eq!(
+            outcome(None, false, b"", out),
+            Shot::Failed("screencapture was stopped".into())
+        );
+    }
+
+    /// Links and calls CoreGraphics. Run with `--ignored`; it only reads the permission state.
+    #[test]
+    #[ignore]
+    fn preflight_runs_off_the_main_thread() {
+        let granted = std::thread::spawn(|| CGPreflightScreenCaptureAccess())
+            .join()
+            .unwrap();
+        println!("screen recording granted: {granted}");
+    }
+}

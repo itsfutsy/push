@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Library</title>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="library.css">
+<script type="module" src="library.js"></script>
+</head>
+<body>
+
+<!-- Icons: Lucide 1.60.0 (https://lucide.dev), ISC License, Copyright (c) Lucide Contributors -->
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+  <symbol id="i-external-link" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="i-trash-2" viewBox="0 0 24 24"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-circle-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/></symbol>
+  <symbol id="i-file-video" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M15.033 13.44a.647.647 0 0 1 0 1.12l-4.065 2.352a.645.645 0 0 1-.968-.56v-4.704a.645.645 0 0 1 .967-.56z"/></symbol>
+  <symbol id="i-file-music" viewBox="0 0 24 24"><path d="M11.65 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v10.35"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M8 20v-7l3 1.474"/><circle cx="6" cy="20" r="2"/></symbol>
+</svg>
+
+<main id="library" class="library">
+  <header id="bar" class="toolbar" data-tauri-drag-region="deep">
+    <div class="title">
+      <h1>Library</h1>
+      <p id="count" class="num"></p>
+    </div>
+    <div id="filters" class="seg glass" role="radiogroup" aria-label="Show">
+      <button type="button" role="radio" data-filter="all" aria-checked="true">All</button>
+      <button type="button" role="radio" data-filter="image" aria-checked="false">Images</button>
+      <button type="button" role="radio" data-filter="video" aria-checked="false">Videos</button>
+      <button type="button" role="radio" data-filter="file" aria-checked="false">Files</button>
+    </div>
+    <label class="search glass">
+      <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+      <input id="search" type="text" placeholder="Search" aria-label="Search uploads"
+             spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off">
+    </label>
+  </header>
+
+  <div id="grid" class="scroll" tabindex="0" role="listbox" aria-label="Uploads" aria-multiselectable="true"></div>
+
+  <div id="empty" class="empty" hidden>
+    <p id="empty-title" class="empty-title"></p>
+    <p id="empty-sub" class="empty-sub"></p>
+  </div>
+
+  <div id="selbar" class="selbar glass" role="toolbar" aria-label="Selected uploads" inert>
+    <p class="sel-text"><span id="sel-title"></span> <span id="sel-sub"></span></p>
+    <button id="sel-all" type="button">Select All</button>
+    <button id="sel-delete" class="del" type="button">Delete</button>
+    <button id="sel-cancel" type="button" hidden>Cancel</button>
+    <button id="sel-really" class="danger" type="button" hidden>Delete</button>
+  </div>
+
+  <section id="preview" class="preview" role="dialog" aria-modal="true" aria-labelledby="pv-name" tabindex="-1" hidden>
+    <div id="pv-scrim" class="scrim"></div>
+    <header id="pv-bar" class="toolbar pv-bar" data-tauri-drag-region="deep">
+      <div class="title">
+        <h2 id="pv-name"></h2>
+        <p id="pv-meta" class="num"></p>
+      </div>
+      <div id="pv-actions" class="group glass">
+        <button id="pv-open" class="icon-btn" type="button" aria-label="Open in Browser" title="Open in Browser">
+          <svg class="i" aria-hidden="true"><use href="#i-external-link"/></svg>
+        </button>
+        <button id="pv-delete" class="icon-btn del" type="button" aria-label="Delete" title="Delete">
+          <svg class="i" aria-hidden="true"><use href="#i-trash-2"/></svg>
+        </button>
+      </div>
+      <div id="pv-confirm" class="confirm glass" role="alertdialog" aria-label="Delete this upload?" hidden>
+        <span>The link stops working.</span>
+        <button id="pv-cancel" class="btn small" type="button">Cancel</button>
+        <button id="pv-really" class="btn small danger" type="button">Delete</button>
+      </div>
+      <button id="pv-close" class="icon-btn round glass" type="button" aria-label="Close" title="Close">
+        <svg class="i" aria-hidden="true"><use href="#i-x"/></svg>
+      </button>
+    </header>
+    <div id="pv-stage" class="stage">
+      <div id="pv-media" class="media"></div>
+      <button id="pv-prev" class="nav glass" type="button" aria-label="Previous" title="Previous">
+        <svg class="i" aria-hidden="true"><use href="#i-chevron-left"/></svg>
+      </button>
+      <button id="pv-next" class="nav glass" type="button" aria-label="Next" title="Next">
+        <svg class="i" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+      </button>
+    </div>
+    <footer id="pv-foot" class="pv-foot">
+      <button id="pv-link" class="link glass" type="button">
+        <svg class="i" aria-hidden="true"><use href="#i-link"/></svg>
+        <span id="pv-url" class="url"></span>
+        <span id="pv-copy" class="copy">Copy Link</span>
+      </button>
+    </footer>
+  </section>
+
+  <div id="toast" class="toast glass" aria-hidden="true">
+    <svg class="i" aria-hidden="true"><use href="#i-check"/></svg>
+    <span id="toast-text"></span>
+  </div>
+</main>
+
+<div id="announcer" class="sr-only" aria-live="polite"></div>
+</body>
+</html>

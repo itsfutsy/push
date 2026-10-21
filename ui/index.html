@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Push</title>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="main.css">
+<script type="module" src="main.js"></script>
+</head>
+<body>
+
+<!-- Icons: Lucide 1.60.0 (https://lucide.dev), ISC License, Copyright (c) Lucide Contributors -->
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-arrow-up-from-line" viewBox="0 0 24 24"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-circle-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/></symbol>
+  <symbol id="i-file-video" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M15.033 13.44a.647.647 0 0 1 0 1.12l-4.065 2.352a.645.645 0 0 1-.968-.56v-4.704a.645.645 0 0 1 .967-.56z"/></symbol>
+  <symbol id="i-file-music" viewBox="0 0 24 24"><path d="M11.65 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v10.35"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M8 20v-7l3 1.474"/><circle cx="6" cy="20" r="2"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+  <symbol id="i-trash-2" viewBox="0 0 24 24"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="i-rotate-cw" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+</svg>
+
+<main id="main" class="view" tabindex="-1" aria-label="Push">
+  <header class="titlebar" data-tauri-drag-region="deep">
+    <button id="open-settings" class="icon-btn titlebar-end" type="button" aria-label="Settings" title="Settings">
+      <svg class="i" aria-hidden="true"><use href="#i-settings"/></svg>
+    </button>
+  </header>
+
+  <section id="zone" class="zone" data-state="idle">
+    <svg class="zone-edge" aria-hidden="true"><rect pathLength="1008"/></svg>
+    <button id="zone-hit" class="zone-hit" type="button" aria-describedby="zone-title zone-sub"></button>
+    <div class="zone-glyph" aria-hidden="true">
+      <svg class="i g-arrow"><use href="#i-arrow-up-from-line"/></svg>
+      <svg id="zone-ring" class="ring g-ring" viewBox="0 0 28 28"><circle class="track" cx="14" cy="14" r="12.75"/><circle class="bar" cx="14" cy="14" r="12.75" pathLength="100"/></svg>
+      <span class="g-check"><svg class="i"><use href="#i-check"/></svg></span>
+      <svg class="i g-alert"><use href="#i-circle-alert"/></svg>
+    </div>
+    <div id="zone-text" class="zone-text">
+      <h1 id="zone-title" class="zone-title">Drop a file to upload</h1>
+      <p id="zone-sub" class="zone-sub">or click to choose one</p>
+      <div class="zone-foot">
+        <p id="zone-hint" class="zone-hint"></p>
+        <button id="zone-action" class="btn small" type="button" hidden></button>
+      </div>
+    </div>
+  </section>
+
+  <div id="recent-head" class="section">
+    <h2 id="recent-title">Recent</h2>
+    <button id="show-all" class="btn small" type="button">Show All</button>
+  </div>
+  <div class="list-wrap">
+    <ul id="list" class="list" aria-labelledby="recent-title"></ul>
+    <div id="empty" class="empty" hidden>
+      <p class="empty-title">No uploads yet</p>
+      <p class="empty-sub">Screenshots and files you upload appear here.</p>
+    </div>
+  </div>
+</main>
+
+<section id="settings" class="view" tabindex="-1" aria-labelledby="settings-title" hidden>
+  <header class="titlebar" data-tauri-drag-region="deep">
+    <h1 id="settings-title" class="titlebar-title">Settings</h1>
+    <button id="done" class="btn titlebar-end" type="button">Done</button>
+  </header>
+
+  <div class="form">
+    <h2 id="g-server" class="group-title">Server</h2>
+    <div class="group" role="group" aria-labelledby="g-server">
+      <div class="frow">
+        <label class="flabel" for="server-url">Server URL</label>
+        <input id="server-url" class="field" type="text" inputmode="url" placeholder="https://share.example.com"
+               spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" aria-describedby="server-url-err">
+        <p id="server-url-err" class="fsub err" hidden></p>
+      </div>
+      <div class="frow">
+        <label class="flabel" for="token">Upload Token</label>
+        <input id="token" class="field" type="password" placeholder="Paste token"
+               spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" aria-describedby="token-err">
+        <p id="token-err" class="fsub err" hidden></p>
+      </div>
+      <div class="frow">
+        <span id="status-label" class="flabel">Status</span>
+        <p id="status" class="status" data-status="checking" role="status" aria-labelledby="status-label" aria-describedby="status-reason"><span class="dot"></span><span id="status-text">Checking…</span></p>
+        <p id="status-reason" class="fsub" hidden></p>
+      </div>
+    </div>
+    <p id="token-note" class="group-note">Your token is stored in your Keychain.</p>
+
+    <h2 id="g-capture" class="group-title">Capture</h2>
+    <div class="group" role="group" aria-labelledby="g-capture">
+      <div id="shortcut-row" class="frow">
+        <span id="shortcut-label" class="flabel">Capture Shortcut</span>
+        <div id="recorder" class="recorder">
+          <button id="rec-key" class="rec-key" type="button" aria-labelledby="shortcut-label rec-key" aria-describedby="shortcut-err"></button>
+          <button id="rec-clear" class="rec-clear" type="button" aria-label="Clear Shortcut" title="Clear Shortcut">
+            <svg class="i" aria-hidden="true"><use href="#i-x"/></svg>
+          </button>
+        </div>
+        <p id="shortcut-err" class="fsub err" hidden></p>
+      </div>
+      <div id="command-row" class="frow" hidden>
+        <span class="flabel">Capture Command</span>
+        <code class="cmd">push --capture</code>
+      </div>
+    </div>
+    <p id="command-note" class="group-note" hidden>Bind a shortcut to this command in your system settings.</p>
+
+    <h2 id="g-general" class="group-title">General</h2>
+    <div class="group" role="group" aria-labelledby="g-general">
+      <div class="frow">
+        <span id="login-label" class="flabel">Launch at Login</span>
+        <button id="login" class="switch" type="button" role="switch" aria-checked="false" aria-labelledby="login-label" aria-describedby="login-err"></button>
+        <p id="login-err" class="fsub err" hidden></p>
+      </div>
+    </div>
+
+    <p id="version" class="version num"></p>
+  </div>
+</section>
+
+<div id="announcer" class="sr-only" aria-live="polite"></div>
+</body>
+</html>

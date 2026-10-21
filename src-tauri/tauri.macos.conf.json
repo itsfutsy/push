@@ -1,0 +1,18 @@
+{
+  "build": {
+    "beforeBundleCommand": {
+      "script": "./macos/share/build.sh",
+      "cwd": ".."
+    }
+  },
+  "bundle": {
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "signingIdentity": "Developer ID Application: Abram Industries Pty ltd (4TZBGP972A)",
+      "hardenedRuntime": true,
+      "files": {
+        "PlugIns/PushShare.appex": "../macos/share/build/PushShare.appex"
+      }
+    }
+  }
+}

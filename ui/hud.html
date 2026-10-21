@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Push</title>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="hud.css">
+<script type="module" src="hud.js"></script>
+</head>
+<body>
+
+<!-- Icons: Lucide 1.60.0 (https://lucide.dev), ISC License, Copyright (c) Lucide Contributors -->
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-circle-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/></symbol>
+  <symbol id="i-file-video" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M15.033 13.44a.647.647 0 0 1 0 1.12l-4.065 2.352a.645.645 0 0 1-.968-.56v-4.704a.645.645 0 0 1 .967-.56z"/></symbol>
+  <symbol id="i-file-music" viewBox="0 0 24 24"><path d="M11.65 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v10.35"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M8 20v-7l3 1.474"/><circle cx="6" cy="20" r="2"/></symbol>
+  <!-- Push's own mark (capture brackets around an up arrow), as in the tray icon -->
+  <symbol id="i-push" viewBox="0 0 22 22"><path d="M4 9V7.5A2.5 2.5 0 0 1 6.5 5H8"/><path d="M14 5h1.5A2.5 2.5 0 0 1 18 7.5V9"/><path d="M18 13v1.5a2.5 2.5 0 0 1-2.5 2.5H14"/><path d="M8 17H6.5A2.5 2.5 0 0 1 4 14.5V13"/><path d="M11 14.25V7.5"/><path d="M8.25 10.25 11 7.5l2.75 2.75"/></symbol>
+</svg>
+
+<div id="hud" class="hud">
+  <button id="hud-hit" class="hud-hit" type="button" aria-labelledby="hud-title hud-sub"></button>
+  <div id="hud-thumb" class="hud-thumb"></div>
+  <div class="hud-text">
+    <p id="hud-title" class="hud-title"></p>
+    <p id="hud-sub" class="hud-sub num"></p>
+  </div>
+  <div class="hud-status" aria-hidden="true">
+    <svg id="hud-ring" class="ring s-ring" viewBox="0 0 22 22"><circle class="track" cx="11" cy="11" r="9.5"/><circle class="bar" cx="11" cy="11" r="9.5" pathLength="100"/></svg>
+    <span class="s-check"><svg class="i"><use href="#i-check"/></svg></span>
+    <svg class="i s-alert"><use href="#i-circle-alert"/></svg>
+  </div>
+  <button id="hud-close" class="hud-close" type="button" aria-label="Close" title="Close">
+    <svg class="i" aria-hidden="true"><use href="#i-x"/></svg>
+  </button>
+</div>
+
+<div id="announcer" class="sr-only" aria-live="polite"></div>
+</body>
+</html>

@@ -1,0 +1,830 @@
+//! The upload list and its single FIFO worker: intake, progress, completion,
+//! clipboard batches, cancel, retry and delete.
+
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime};
+
+use base64::Engine;
+use image::DynamicImage;
+use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_clipboard_manager::ClipboardExt;
+use tokio::sync::{mpsc, oneshot};
+
+use crate::model::{
+    ErrorKind, Kind, Progress, Status, Upload, UploadError, kind_for, new_id, now_ms, sanitize_ext,
+};
+use crate::net::{Api, is_web_url, validate_server_url};
+use crate::transfer::{self, OnSent, POLICY, Sent};
+use crate::{Core, preview, store, tray, windows};
+
+/// Longest edge of the inline thumbnail images get while they upload, in pixels (the HUD shows
+/// it at 48 pt on Retina).
+const THUMB_EDGE: u32 = 192;
+const PROGRESS_EVERY: Duration = Duration::from_millis(100);
+/// A cancelled upload is deleted from the server right away and once more after this long:
+/// bytes the OS had already accepted keep going out after the abort, and on a slow link
+/// they can complete the file on the server well after the first delete.
+const DISCARD_AGAIN: Duration = Duration::from_secs(60);
+
+pub const GONE: &str = "That upload isn’t there anymore.";
+pub const NO_TOKEN: &str = "Add your upload token in Settings.";
+pub const BAD_SERVER: &str = "Check the server URL in Settings.";
+const OTHER_SERVER: &str = "This upload is on a different server.";
+
+/// Where a file came from, which decides what to clean up after it uploads.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Origin {
+    File,
+    /// A screenshot in the captures folder: deleted after upload.
+    Capture,
+    /// A file in `inbox/<uuid>/`: the folder is deleted once nothing in it is pending.
+    Inbox(PathBuf),
+}
+
+pub struct Source {
+    pub path: PathBuf,
+    pub origin: Origin,
+    /// Overrides the displayed file name (captures).
+    pub file_name: Option<String>,
+}
+
+impl Source {
+    pub fn file(path: PathBuf) -> Self {
+        Self { path, origin: Origin::File, file_name: None }
+    }
+}
+
+struct Item {
+    upload: Upload,
+    seq: u64,
+    path: Option<PathBuf>,
+    origin: Origin,
+    batch: u64,
+    /// The file as the last upload attempt read it. `Some` once an attempt may have left
+    /// bytes on the server.
+    stamp: Option<Stamp>,
+}
+
+impl Item {
+    /// Part or all of the file may be on the server.
+    fn started(&self) -> bool {
+        self.stamp.is_some() || self.upload.status == Status::Uploading
+    }
+}
+
+/// Size and modification time of a file, to notice it changed between attempts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Stamp {
+    size: u64,
+    modified: Option<SystemTime>,
+}
+
+impl Stamp {
+    fn of(meta: &std::fs::Metadata) -> Self {
+        Self { size: meta.len(), modified: meta.modified().ok() }
+    }
+}
+
+/// How an upload attempt begins.
+#[derive(Debug, PartialEq, Eq)]
+enum Start {
+    /// Nothing was sent before.
+    Fresh,
+    /// Continue from whatever an earlier attempt left on the server.
+    Resume,
+    /// The file changed since the last attempt: what the server has must not be reused.
+    Restart,
+}
+
+fn start_for(previous: Option<Stamp>, now: Stamp) -> Start {
+    match previous {
+        None => Start::Fresh,
+        Some(previous) if previous == now => Start::Resume,
+        Some(_) => Start::Restart,
+    }
+}
+
+/// The links of one intake event (a drop, a picker selection, a share), in intake order.
+#[derive(Default)]
+struct Batch {
+    ids: Vec<String>,
+    urls: HashMap<String, String>,
+}
+
+impl Batch {
+    /// Records a finished upload and returns the clipboard text: every finished link, one per line.
+    fn finish(&mut self, id: &str, url: &str) -> String {
+        self.urls.insert(id.to_owned(), url.to_owned());
+        let links: Vec<&str> = self.ids.iter().filter_map(|id| self.urls.get(id)).map(String::as_str).collect();
+        links.join("\n")
+    }
+}
+
+#[derive(Default)]
+pub struct Uploads {
+    items: Vec<Item>,
+    batches: HashMap<u64, Batch>,
+    counter: u64,
+    /// The uploading item and the switch that cancels it.
+    current: Option<(String, oneshot::Sender<()>)>,
+}
+
+/// In-flight and failed first, then done; newest first within each group.
+fn order(a: &Item, b: &Item) -> Ordering {
+    let done = |i: &Item| i.upload.status == Status::Done;
+    done(a)
+        .cmp(&done(b))
+        .then(b.upload.created_at.cmp(&a.upload.created_at))
+        .then(b.seq.cmp(&a.seq))
+}
+
+impl Uploads {
+    /// Starts from the persisted list (newest first).
+    pub fn from_done(done: Vec<Upload>) -> Self {
+        let mut uploads = Self::default();
+        for upload in done.into_iter().rev() {
+            let seq = uploads.next();
+            uploads.items.push(Item { upload, seq, path: None, origin: Origin::File, batch: 0, stamp: None });
+        }
+        uploads
+    }
+
+    fn next(&mut self) -> u64 {
+        self.counter += 1;
+        self.counter
+    }
+
+    fn sorted(&self) -> Vec<&Item> {
+        let mut items: Vec<&Item> = self.items.iter().collect();
+        items.sort_by(|a, b| order(a, b));
+        items
+    }
+
+    /// The list as the UI shows it (`AppInfo.uploads`).
+    pub fn list(&self) -> Vec<Upload> {
+        self.sorted().into_iter().map(|i| i.upload.clone()).collect()
+    }
+
+    /// Finished uploads, newest first (what uploads.json stores).
+    fn done(&self) -> Vec<Upload> {
+        self.sorted().into_iter().filter(|i| i.upload.status == Status::Done).map(|i| i.upload.clone()).collect()
+    }
+
+    pub fn last_link(&self) -> Option<String> {
+        self.sorted().into_iter().find(|i| i.upload.status == Status::Done).map(|i| i.upload.url.clone())
+    }
+
+    pub fn has_done(&self) -> bool {
+        self.items.iter().any(|i| i.upload.status == Status::Done)
+    }
+
+    fn get(&self, id: &str) -> Option<&Item> {
+        self.items.iter().find(|i| i.upload.id == id)
+    }
+
+    fn get_mut(&mut self, id: &str) -> Option<&mut Item> {
+        self.items.iter_mut().find(|i| i.upload.id == id)
+    }
+
+    fn remove(&mut self, id: &str) -> Option<Item> {
+        let index = self.items.iter().position(|i| i.upload.id == id)?;
+        Some(self.items.remove(index))
+    }
+
+    /// Adds a batch of new items; returns the ids to queue.
+    fn add(&mut self, uploads: Vec<(Upload, PathBuf, Origin)>) -> Vec<String> {
+        let batch = self.next();
+        let mut queued = Vec::new();
+        for (upload, path, origin) in uploads {
+            if upload.status == Status::Queued {
+                queued.push(upload.id.clone());
+            }
+            let seq = self.next();
+            self.items.push(Item { upload, seq, path: Some(path), origin, batch, stamp: None });
+        }
+        if !queued.is_empty() {
+            self.batches.insert(batch, Batch { ids: queued.clone(), urls: HashMap::new() });
+        }
+        queued
+    }
+
+    /// Drops batches with nothing left to finish.
+    fn prune_batches(&mut self) {
+        let pending: HashSet<u64> = self
+            .items
+            .iter()
+            .filter(|i| matches!(i.upload.status, Status::Queued | Status::Uploading))
+            .map(|i| i.batch)
+            .collect();
+        self.batches.retain(|batch, _| pending.contains(batch));
+    }
+
+    /// Keeps at most `MAX_DONE` finished uploads.
+    fn trim_done(&mut self) {
+        let keep: HashSet<String> =
+            self.done().into_iter().take(store::MAX_DONE).map(|u| u.id).collect();
+        self.items.retain(|i| i.upload.status != Status::Done || keep.contains(&i.upload.id));
+    }
+
+    /// What to delete once `item` is gone or done.
+    fn cleanup_for(&self, path: Option<PathBuf>, origin: &Origin) -> Cleanup {
+        match origin {
+            Origin::File => Cleanup::None,
+            Origin::Capture => path.map_or(Cleanup::None, Cleanup::File),
+            Origin::Inbox(dir) => {
+                let in_use = self
+                    .items
+                    .iter()
+                    .any(|i| i.upload.status != Status::Done && i.origin == Origin::Inbox(dir.clone()));
+                if in_use { Cleanup::None } else { Cleanup::Dir(dir.clone()) }
+            }
+        }
+    }
+}
+
+enum Cleanup {
+    None,
+    File(PathBuf),
+    Dir(PathBuf),
+}
+
+impl Cleanup {
+    fn run(self) {
+        let result = match &self {
+            Cleanup::None => return,
+            Cleanup::File(path) => std::fs::remove_file(path),
+            Cleanup::Dir(dir) => std::fs::remove_dir_all(dir),
+        };
+        if let Err(e) = result
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            eprintln!("push: cleanup failed: {e}");
+        }
+    }
+}
+
+fn unsupported(message: &str) -> UploadError {
+    UploadError::new(ErrorKind::Unsupported, message)
+}
+
+fn missing(message: &str) -> UploadError {
+    UploadError::new(ErrorKind::Missing, message)
+}
+
+fn open_error(e: &std::io::Error) -> UploadError {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        missing("The file is no longer there.")
+    } else {
+        missing("Push can’t read this file.")
+    }
+}
+
+/// A small PNG `data:` URL. It is resent with every `uploads` event while the item is in
+/// flight, so it must stay tiny.
+async fn thumbnail(img: DynamicImage) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut png = std::io::Cursor::new(Vec::new());
+        img.thumbnail(THUMB_EDGE, THUMB_EDGE).write_to(&mut png, image::ImageFormat::Png).ok()?;
+        Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png.into_inner())))
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// The remote extension in a name like `Xc3nzK9qPa.png`.
+fn ext_of(name: &str) -> &str {
+    name.rsplit_once('.').map_or("bin", |(_, ext)| ext)
+}
+
+/// Makes a queued upload's Library preview from its file and, for an image, shows a thumbnail
+/// of it while it uploads, unless the item has moved on.
+async fn add_thumbnail(app: &AppHandle, id: &str) {
+    let core = app.state::<Core>();
+    let source = core
+        .uploads
+        .lock()
+        .unwrap()
+        .get(id)
+        .and_then(|i| Some((i.path.clone()?, i.upload.name.clone(), i.upload.size, i.upload.kind)));
+    let Some((path, name, size, kind)) = source else { return };
+    let scratch = core.cache_dir.join("quicklook");
+    let Some(img) = preview::make(&core.previews_dir, &scratch, id, &path, ext_of(&name), size).await else { return };
+    // Cancelled while the preview was made: nothing will remove it now.
+    if core.uploads.lock().unwrap().get(id).is_none() {
+        return preview::remove(&core.previews_dir, id);
+    }
+    if kind != Kind::Image {
+        return;
+    }
+    let Some(thumb) = thumbnail(img).await else { return };
+    let upload = {
+        let mut uploads = core.uploads.lock().unwrap();
+        let in_flight = |i: &&mut Item| matches!(i.upload.status, Status::Queued | Status::Uploading);
+        let Some(item) = uploads.get_mut(id).filter(in_flight) else { return };
+        item.upload.thumb = Some(thumb);
+        item.upload.clone()
+    };
+    emit_uploads(app);
+    windows::announce(app, &upload, false);
+}
+
+async fn prepare(source: Source) -> (Upload, PathBuf, Origin) {
+    let Source { path, origin, file_name } = source;
+    let id = new_id();
+    let ext = if origin == Origin::Capture { "png".to_owned() } else { sanitize_ext(&path) };
+    let file_name = file_name.unwrap_or_else(|| {
+        path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned())
+    });
+    let (size, error) = match tokio::fs::metadata(&path).await {
+        Ok(m) if m.is_dir() => (0, Some(unsupported("Folders can’t be uploaded."))),
+        Ok(m) if !m.is_file() => (0, Some(unsupported("Only files can be uploaded."))),
+        Ok(m) if m.len() == 0 => (0, Some(unsupported("This file is empty."))),
+        Ok(m) => (m.len(), None),
+        Err(e) => (0, Some(open_error(&e))),
+    };
+    let upload = Upload {
+        name: format!("{id}.{ext}"),
+        id,
+        url: String::new(),
+        file_name,
+        size,
+        kind: kind_for(&ext),
+        created_at: now_ms(),
+        status: if error.is_some() { Status::Failed } else { Status::Queued },
+        sent: 0,
+        error,
+        thumb: None,
+    };
+    (upload, path, origin)
+}
+
+pub fn emit_uploads(app: &AppHandle) {
+    let list = app.state::<Core>().uploads.lock().unwrap().list();
+    let _ = app.emit("uploads", list);
+}
+
+fn persist(app: &AppHandle) {
+    let core = app.state::<Core>();
+    let _guard = core.persist.lock().unwrap();
+    let done = core.uploads.lock().unwrap().done();
+    if let Err(e) = store::save_uploads(&core.uploads_path, &done) {
+        eprintln!("push: couldn’t save uploads.json: {e}");
+    }
+}
+
+/// Adds files from one intake event (one clipboard batch) and queues them in order. Image
+/// previews follow once decoded, so a big image never holds up the list or the queue.
+pub async fn intake(app: &AppHandle, sources: Vec<Source>) {
+    if sources.is_empty() {
+        return;
+    }
+    let mut prepared = Vec::with_capacity(sources.len());
+    for source in sources {
+        prepared.push(prepare(source).await);
+    }
+    let failed: Vec<Upload> =
+        prepared.iter().filter(|(u, ..)| u.status == Status::Failed).map(|(u, ..)| u.clone()).collect();
+    let core = app.state::<Core>();
+    let queued = core.uploads.lock().unwrap().add(prepared);
+    for id in &queued {
+        let _ = core.jobs.send(id.clone());
+    }
+    emit_uploads(app);
+    for upload in &failed {
+        windows::announce(app, upload, true);
+    }
+    for id in &queued {
+        add_thumbnail(app, id).await;
+    }
+}
+
+struct Job {
+    id: String,
+    name: String,
+    path: PathBuf,
+    /// The file as the previous attempt read it.
+    stamp: Option<Stamp>,
+}
+
+/// Runs queued uploads one at a time, in order.
+pub async fn worker(app: AppHandle, mut jobs: mpsc::UnboundedReceiver<String>) {
+    while let Some(id) = jobs.recv().await {
+        let core = app.state::<Core>();
+        let (cancel, cancelled) = oneshot::channel();
+        let (job, upload) = {
+            let mut uploads = core.uploads.lock().unwrap();
+            let Some(item) = uploads.get_mut(&id).filter(|i| i.upload.status == Status::Queued) else { continue };
+            let Some(path) = item.path.clone() else { continue };
+            item.upload.status = Status::Uploading;
+            item.upload.sent = 0;
+            let job = Job { id: id.clone(), name: item.upload.name.clone(), path, stamp: item.stamp };
+            let upload = item.upload.clone();
+            uploads.current = Some((id.clone(), cancel));
+            (job, upload)
+        };
+        emit_uploads(&app);
+        windows::announce(&app, &upload, true);
+        let result = tokio::select! {
+            result = run(&app, &job) => Some(result),
+            _ = cancelled => None,
+        };
+        core.uploads.lock().unwrap().current = None;
+        if let Some(result) = result {
+            finish(&app, &id, result);
+        }
+    }
+}
+
+fn progress_reporter(app: &AppHandle, id: &str, total: u64) -> OnSent {
+    let (app, id) = (app.clone(), id.to_owned());
+    let last = Mutex::new(None::<Instant>);
+    Arc::new(move |sent| {
+        let now = Instant::now();
+        {
+            let mut last = last.lock().unwrap();
+            if sent < total && last.is_some_and(|t| now.duration_since(t) < PROGRESS_EVERY) {
+                return;
+            }
+            *last = Some(now);
+        }
+        if let Some(item) = app.state::<Core>().uploads.lock().unwrap().get_mut(&id) {
+            item.upload.sent = sent;
+        }
+        let _ = app.emit("upload-progress", Progress { id: id.clone(), sent, total });
+    })
+}
+
+/// Uploads one file and returns its public URL and size.
+async fn run(app: &AppHandle, job: &Job) -> Result<(String, u64), UploadError> {
+    let core = app.state::<Core>();
+    let token = match core.token.get().await {
+        Ok(Some(token)) => token,
+        Ok(None) => return Err(UploadError::new(ErrorKind::Auth, NO_TOKEN)),
+        Err(e) => return Err(UploadError::new(ErrorKind::Auth, e)),
+    };
+    let server = core.settings.lock().unwrap().server_url.clone();
+    let base = validate_server_url(&server).map_err(|_| UploadError::new(ErrorKind::Server, BAD_SERVER))?;
+    let mut file = tokio::fs::File::open(&job.path).await.map_err(|e| open_error(&e))?;
+    let meta = file.metadata().await.map_err(|e| open_error(&e))?;
+    let total = meta.len();
+    if total == 0 {
+        return Err(unsupported("This file is empty."));
+    }
+    let api = Api::new(core.http.clone(), base.clone(), token);
+    let stamp = Stamp::of(&meta);
+    let start = start_for(job.stamp, stamp);
+    if start == Start::Restart {
+        // Resuming would splice the old version's bytes into the new one. The old stamp is
+        // kept until this succeeds, so a failed delete is tried again on the next attempt.
+        match api.delete(&job.name).await {
+            Ok(204 | 404) => {}
+            Ok(401) => return Err(transfer::auth_error()),
+            Ok(_) => return Err(UploadError::new(ErrorKind::Server, "The server ran into a problem.")),
+            Err(_) => return Err(transfer::network_error()),
+        }
+    }
+    if let Some(item) = core.uploads.lock().unwrap().get_mut(&job.id) {
+        item.stamp = Some(stamp);
+    }
+    let progress = progress_reporter(app, &job.id, total);
+    let resume = start == Start::Resume;
+    let url = match transfer::send(&api, &mut file, &job.name, total, resume, &POLICY, &progress).await? {
+        Sent::Url(url) if is_web_url(&url) => url,
+        Sent::Url(_) => return Err(UploadError::new(ErrorKind::Server, "The server sent an invalid link.")),
+        Sent::Exists => format!("{base}/i/{}", job.name),
+    };
+    Ok((url, total))
+}
+
+fn finish(app: &AppHandle, id: &str, result: Result<(String, u64), UploadError>) {
+    let core = app.state::<Core>();
+    let (upload, clipboard, cleanup) = {
+        let mut uploads = core.uploads.lock().unwrap();
+        let Some(item) = uploads.get_mut(id) else { return };
+        item.upload.thumb = None;
+        let mut clipboard = None;
+        let mut done = None;
+        match result {
+            Ok((url, size)) => {
+                item.upload.status = Status::Done;
+                item.upload.url = url.clone();
+                item.upload.size = size;
+                item.upload.sent = size;
+                item.upload.error = None;
+                done = Some((item.batch, url, item.path.take(), item.origin.clone()));
+            }
+            Err(error) => {
+                item.upload.status = Status::Failed;
+                item.upload.error = Some(error);
+            }
+        }
+        let upload = item.upload.clone();
+        let mut cleanup = Cleanup::None;
+        if let Some((batch, url, path, origin)) = done {
+            clipboard = Some(uploads.batches.get_mut(&batch).map_or_else(|| url.clone(), |b| b.finish(id, &url)));
+            cleanup = uploads.cleanup_for(path, &origin);
+            uploads.trim_done();
+        }
+        uploads.prune_batches();
+        (upload, clipboard, cleanup)
+    };
+    if let Some(text) = clipboard {
+        if let Err(e) = app.clipboard().write_text(text) {
+            eprintln!("push: couldn’t write the clipboard: {e}");
+        }
+        persist(app);
+        tray::refresh(app);
+    }
+    cleanup.run();
+    emit_uploads(app);
+    windows::announce(app, &upload, false);
+}
+
+/// Cancels a queued or uploading item, or dismisses a failed one.
+pub fn cancel(app: &AppHandle, id: &str) -> Result<(), String> {
+    let core = app.state::<Core>();
+    let (cleanup, sent) = {
+        let mut uploads = core.uploads.lock().unwrap();
+        match uploads.get(id) {
+            None => return Err(GONE.into()),
+            Some(item) if item.upload.status == Status::Done => return Err("This upload is already done.".into()),
+            Some(_) => {}
+        }
+        let item = uploads.remove(id).expect("item exists");
+        if uploads.current.as_ref().is_some_and(|(current, _)| current == id)
+            && let Some((_, cancel)) = uploads.current.take()
+        {
+            let _ = cancel.send(());
+        }
+        uploads.prune_batches();
+        let sent = item.started().then(|| item.upload.name.clone());
+        (uploads.cleanup_for(item.path, &item.origin), sent)
+    };
+    cleanup.run();
+    preview::remove(&core.previews_dir, id);
+    if let Some(name) = sent {
+        discard(app, name);
+    }
+    emit_uploads(app);
+    windows::forget(app, id);
+    Ok(())
+}
+
+/// Best effort: deletes what a cancelled or dismissed upload left on the server, so a file
+/// that completes after the abort doesn't stay public with no row left to delete it from.
+fn discard(app: &AppHandle, name: String) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        for delay in [Duration::ZERO, DISCARD_AGAIN] {
+            tokio::time::sleep(delay).await;
+            let core = app.state::<Core>();
+            let Ok(Some(token)) = core.token.get().await else { return };
+            let server = core.settings.lock().unwrap().server_url.clone();
+            let Ok(base) = validate_server_url(&server) else { return };
+            let _ = Api::new(core.http.clone(), base, token).delete(&name).await;
+        }
+    });
+}
+
+/// Queues a failed item again (same id). The next attempt resumes whatever reached the
+/// server, or starts over if the file changed since (see `start_for`).
+pub async fn retry(app: &AppHandle, id: &str) -> Result<(), String> {
+    let core = app.state::<Core>();
+    let path = {
+        let uploads = core.uploads.lock().unwrap();
+        let item = uploads.get(id).ok_or(GONE)?;
+        if item.upload.status != Status::Failed {
+            return Ok(());
+        }
+        item.path.clone().ok_or("The file is no longer there.")?
+    };
+    let size = match tokio::fs::metadata(&path).await {
+        Ok(m) if m.is_file() && m.len() > 0 => m.len(),
+        Ok(_) => return Err("This file can’t be uploaded.".into()),
+        Err(_) => return Err("The file is no longer there.".into()),
+    };
+    {
+        let mut uploads = core.uploads.lock().unwrap();
+        let batch = uploads.next();
+        let item = uploads.get_mut(id).filter(|i| i.upload.status == Status::Failed).ok_or(GONE)?;
+        item.upload.status = Status::Queued;
+        item.upload.error = None;
+        item.upload.sent = 0;
+        item.upload.size = size;
+        item.batch = batch;
+        uploads.batches.insert(batch, Batch { ids: vec![id.to_owned()], urls: HashMap::new() });
+    }
+    let _ = core.jobs.send(id.to_owned());
+    emit_uploads(app);
+    add_thumbnail(app, id).await;
+    Ok(())
+}
+
+/// The API base a finished upload was made to: its link is `{base}/i/{name}`.
+fn base_of(upload: &Upload) -> Option<String> {
+    let base = upload.url.strip_suffix(&format!("/i/{}", upload.name))?;
+    validate_server_url(base).ok()
+}
+
+/// Deletes a finished upload from the server it was made to, then from the list. Anything
+/// else is cancelled.
+pub async fn delete(app: &AppHandle, id: &str) -> Result<(), String> {
+    let core = app.state::<Core>();
+    let (name, home) = {
+        let uploads = core.uploads.lock().unwrap();
+        let item = uploads.get(id).ok_or(GONE)?;
+        if item.upload.status != Status::Done {
+            drop(uploads);
+            return cancel(app, id);
+        }
+        (item.upload.name.clone(), base_of(&item.upload))
+    };
+    let token = core.token.get().await?.ok_or(NO_TOKEN)?;
+    let server = core.settings.lock().unwrap().server_url.clone();
+    let current = validate_server_url(&server).ok();
+    // A 404 only means "already deleted" from the server that is set now and made the upload.
+    let here = home.is_some() && home == current;
+    let base = home.or(current).ok_or(BAD_SERVER)?;
+    match Api::new(core.http.clone(), base, token).delete(&name).await {
+        Ok(204) => {}
+        Ok(404) if here => {}
+        Ok(404) => return Err(OTHER_SERVER.into()),
+        Ok(401) => return Err("The token wasn’t accepted.".into()),
+        Ok(_) => return Err("The server couldn’t delete it.".into()),
+        Err(_) => return Err("Can’t reach the server.".into()),
+    }
+    core.uploads.lock().unwrap().remove(id);
+    preview::remove(&core.previews_dir, id);
+    persist(app);
+    tray::refresh(app);
+    emit_uploads(app);
+    windows::forget(app, id);
+    Ok(())
+}
+
+/// The public link of a finished upload.
+pub fn link(app: &AppHandle, id: &str) -> Result<String, String> {
+    let core = app.state::<Core>();
+    let uploads = core.uploads.lock().unwrap();
+    let item = uploads.get(id).ok_or(GONE)?;
+    if item.upload.status != Status::Done || !is_web_url(&item.upload.url) {
+        return Err("This upload isn’t finished yet.".into());
+    }
+    Ok(item.upload.url.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Kind;
+
+    fn upload(id: &str, status: Status, created_at: u64) -> Upload {
+        Upload {
+            id: id.into(),
+            name: format!("{id}.png"),
+            url: if status == Status::Done { format!("https://example.com/i/{id}.png") } else { String::new() },
+            file_name: format!("{id}.png"),
+            size: 1,
+            kind: Kind::Image,
+            created_at,
+            status,
+            sent: 0,
+            error: None,
+            thumb: None,
+        }
+    }
+
+    fn ids(list: &[Upload]) -> Vec<&str> {
+        list.iter().map(|u| u.id.as_str()).collect()
+    }
+
+    #[test]
+    fn list_puts_pending_and_failed_first_then_done_newest_first() {
+        // Persisted list, newest first.
+        let mut uploads = Uploads::from_done(vec![upload("d3", Status::Done, 30), upload("d1", Status::Done, 10)]);
+        let added = uploads.add(vec![
+            (upload("q1", Status::Queued, 40), PathBuf::from("/a"), Origin::File),
+            (upload("f1", Status::Failed, 40), PathBuf::from("/b"), Origin::File),
+            (upload("q2", Status::Queued, 40), PathBuf::from("/c"), Origin::File),
+        ]);
+        assert_eq!(added, ["q1", "q2"]);
+        uploads.add(vec![(upload("u1", Status::Queued, 50), PathBuf::from("/d"), Origin::File)]);
+        uploads.get_mut("u1").unwrap().upload.status = Status::Uploading;
+        uploads.add(vec![(upload("d2", Status::Queued, 20), PathBuf::from("/e"), Origin::File)]);
+        uploads.get_mut("d2").unwrap().upload.status = Status::Done;
+
+        // Same timestamp: the later addition counts as newer.
+        assert_eq!(ids(&uploads.list()), ["u1", "q2", "f1", "q1", "d3", "d2", "d1"]);
+        assert_eq!(ids(&uploads.done()), ["d3", "d2", "d1"]);
+        assert_eq!(uploads.last_link().unwrap(), "https://example.com/i/d3.png");
+    }
+
+    #[test]
+    fn batches_join_finished_links_in_intake_order() {
+        let mut batch = Batch { ids: vec!["a".into(), "b".into(), "c".into()], urls: HashMap::new() };
+        assert_eq!(batch.finish("b", "https://x/i/b"), "https://x/i/b");
+        assert_eq!(batch.finish("a", "https://x/i/a"), "https://x/i/a\nhttps://x/i/b");
+        assert_eq!(batch.finish("c", "https://x/i/c"), "https://x/i/a\nhttps://x/i/b\nhttps://x/i/c");
+    }
+
+    #[test]
+    fn batches_are_dropped_when_nothing_is_pending() {
+        let mut uploads = Uploads::default();
+        uploads.add(vec![
+            (upload("a", Status::Queued, 1), PathBuf::from("/a"), Origin::File),
+            (upload("b", Status::Queued, 1), PathBuf::from("/b"), Origin::File),
+        ]);
+        assert_eq!(uploads.batches.len(), 1);
+        uploads.get_mut("a").unwrap().upload.status = Status::Done;
+        uploads.prune_batches();
+        assert_eq!(uploads.batches.len(), 1);
+        uploads.get_mut("b").unwrap().upload.status = Status::Failed;
+        uploads.prune_batches();
+        assert!(uploads.batches.is_empty());
+    }
+
+    #[test]
+    fn inbox_folders_are_cleaned_only_when_unused() {
+        let dir = PathBuf::from("/inbox/x");
+        let mut uploads = Uploads::default();
+        uploads.add(vec![
+            (upload("a", Status::Queued, 1), PathBuf::from("/inbox/x/a"), Origin::Inbox(dir.clone())),
+            (upload("b", Status::Queued, 1), PathBuf::from("/inbox/x/b"), Origin::Inbox(dir.clone())),
+        ]);
+        uploads.get_mut("a").unwrap().upload.status = Status::Done;
+        assert!(matches!(uploads.cleanup_for(None, &Origin::Inbox(dir.clone())), Cleanup::None));
+        uploads.get_mut("b").unwrap().upload.status = Status::Done;
+        assert!(matches!(uploads.cleanup_for(None, &Origin::Inbox(dir.clone())), Cleanup::Dir(d) if d == dir));
+        let capture = PathBuf::from("/captures/c.png");
+        assert!(matches!(uploads.cleanup_for(Some(capture.clone()), &Origin::Capture), Cleanup::File(p) if p == capture));
+        assert!(matches!(uploads.cleanup_for(Some(capture), &Origin::File), Cleanup::None));
+    }
+
+    #[test]
+    fn a_changed_file_starts_over_instead_of_resuming() {
+        let path = std::env::temp_dir().join(format!("push-stamp-{}", crate::model::new_id()));
+        std::fs::write(&path, b"version one").unwrap();
+        let first = Stamp::of(&std::fs::metadata(&path).unwrap());
+        assert_eq!(start_for(None, first), Start::Fresh);
+        assert_eq!(start_for(Some(first), Stamp::of(&std::fs::metadata(&path).unwrap())), Start::Resume);
+
+        // Edited in place: same size, new content and time.
+        let file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        std::io::Write::write_all(&mut &file, b"version two").unwrap();
+        file.set_modified(SystemTime::now() + Duration::from_secs(5)).unwrap();
+        let edited = Stamp::of(&std::fs::metadata(&path).unwrap());
+        assert_eq!(edited.size, first.size);
+        assert_eq!(start_for(Some(first), edited), Start::Restart);
+
+        // Grown or shrunk.
+        std::fs::write(&path, b"v3").unwrap();
+        let shrunk = Stamp { modified: edited.modified, ..Stamp::of(&std::fs::metadata(&path).unwrap()) };
+        assert_eq!(start_for(Some(edited), shrunk), Start::Restart);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn only_started_uploads_need_a_server_cleanup() {
+        let mut uploads = Uploads::default();
+        uploads.add(vec![
+            (upload("q", Status::Queued, 1), PathBuf::from("/q"), Origin::File),
+            (upload("u", Status::Queued, 1), PathBuf::from("/u"), Origin::File),
+            (upload("f", Status::Failed, 1), PathBuf::from("/f"), Origin::File),
+            (upload("r", Status::Failed, 1), PathBuf::from("/r"), Origin::File),
+        ]);
+        uploads.get_mut("u").unwrap().upload.status = Status::Uploading;
+        uploads.get_mut("r").unwrap().stamp = Some(Stamp { size: 1, modified: None });
+        let started: Vec<bool> = ["q", "u", "f", "r"].iter().map(|id| uploads.get(id).unwrap().started()).collect();
+        assert_eq!(started, [false, true, false, true]);
+    }
+
+    #[test]
+    fn deletes_go_to_the_server_in_the_link() {
+        let base = |url: &str, name: &str| {
+            let mut u = upload("x", Status::Done, 1);
+            (u.url, u.name) = (url.into(), name.into());
+            base_of(&u)
+        };
+        assert_eq!(base("https://example.com/i/Xc3nzK9qPa.png", "Xc3nzK9qPa.png").unwrap(), "https://example.com");
+        assert_eq!(base("https://example.com/push/i/a.png", "a.png").unwrap(), "https://example.com/push");
+        assert_eq!(base("http://localhost:3000/i/a.png", "a.png").unwrap(), "http://localhost:3000");
+        assert_eq!(base("https://example.com/i/a.png", "b.png"), None);
+        assert_eq!(base("https://example.com/a.png", "a.png"), None);
+        assert_eq!(base("http://example.com/i/a.png", "a.png"), None, "plain http only for localhost");
+        assert_eq!(base("", "a.png"), None);
+    }
+
+    #[test]
+    fn done_list_is_capped() {
+        let done: Vec<Upload> = (0..store::MAX_DONE as u64 + 5).rev().map(|i| upload(&format!("d{i}"), Status::Done, i)).collect();
+        let mut uploads = Uploads::from_done(done);
+        uploads.trim_done();
+        let list = uploads.done();
+        assert_eq!(list.len(), store::MAX_DONE);
+        assert_eq!(list[0].id, format!("d{}", store::MAX_DONE + 4));
+    }
+}

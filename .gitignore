@@ -1,0 +1,8 @@
+# build output
+target/
+src-tauri/gen/
+macos/share/build/
+# local only
+.research/
+.env
+.DS_Store

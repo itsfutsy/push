@@ -1,0 +1,55 @@
+/* HUD: 300x64, borderless, native Liquid Glass behind a transparent page (radius 18).
+   Thumbnail radius 10 at an 8 inset is concentric with the glass. */
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+.hud {
+  position: fixed; inset: 0; box-sizing: border-box; padding: 8px 16px 8px 8px; border-radius: var(--r-hud);
+  display: flex; align-items: center; gap: 10px; overflow: hidden; opacity: 0;
+  transition: background-color var(--dur-fast);
+}
+.hud[data-state]:not([data-state=""]) { opacity: 1; }
+.hud-hit { position: absolute; inset: 0; border-radius: inherit; transition: background-color var(--dur-fast); }
+.hud-hit:hover { background: var(--fill-4); }
+.hud-hit:active { background: var(--fill-3); }
+.hud-thumb, .hud-text, .hud-status { position: relative; pointer-events: none; }
+
+.hud-thumb {
+  width: 48px; height: 48px; flex: none; border-radius: 10px; overflow: hidden;
+  display: grid; place-items: center; background: var(--fill-2); color: var(--label-2);
+}
+.hud-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hud-thumb.has-img { background: none; }
+.hud-thumb.has-img::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 .5px var(--thumb-edge); }
+.hud-thumb .i { width: 22px; height: 22px; stroke-width: 1.5; }
+.hud-thumb .mark { width: 30px; height: 30px; stroke-width: 1.2; }
+
+.hud-text { flex: 1; min-width: 0; }
+.hud-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-sub { font-size: 11px; line-height: 14px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.hud-status { display: grid; width: 22px; height: 22px; flex: none; }
+.hud-status > * {
+  grid-area: 1 / 1; width: 22px; height: 22px; opacity: 0; scale: .6;
+  transition: opacity var(--dur-snappy) var(--ease-snappy), scale var(--dur-snappy) var(--ease-snappy);
+}
+.s-ring circle { stroke-width: 2.5; }
+.s-check { border-radius: 50%; background: var(--green); color: #fff; display: grid; place-items: center; }
+.s-check .i { width: 13px; height: 13px; stroke-width: 3.25; }
+.s-alert { color: var(--orange); stroke-width: 2; }
+.hud[data-state="uploading"] .s-ring,
+.hud[data-state="done"] .s-check,
+.hud[data-state="failed"] .s-alert { opacity: 1; scale: 1; }
+.hud[data-state="done"] .s-ring { opacity: 0; scale: 1.15; }
+
+/* Close button at the top-left, like Notification Center: on hover, and always on notices that stay */
+.hud-close {
+  position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 9px;
+  display: grid; place-items: center; color: var(--label-2);
+  background: color-mix(in srgb, var(--bg-window) 92%, transparent);
+  box-shadow: 0 0 0 .5px var(--field-edge), 0 1px 3px rgba(0,0,0,.12);
+  opacity: 0; scale: .8; transition: opacity var(--dur-fast), scale var(--dur-fast), color var(--dur-fast);
+}
+.hud-close .i { width: 10px; height: 10px; stroke-width: 2.5; }
+.hud:hover .hud-close, .hud:is([data-state="failed"], [data-state="permission"]) .hud-close, .hud-close:focus-visible { opacity: 1; scale: 1; }
+.hud-close:hover { color: var(--label); }
+@media (prefers-reduced-transparency: reduce) { .hud-close { background: var(--bg-window); } }

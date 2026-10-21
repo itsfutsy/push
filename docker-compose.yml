@@ -1,0 +1,35 @@
+# The Push server plus Caddy, which gets and renews an HTTPS certificate for your domain automatically.
+#
+#   cp .env.example .env     then fill in PUSH_DOMAIN and PUSH_TOKEN
+#   docker compose up -d
+#
+# Already have a reverse proxy (Traefik, nginx, Coolify, Dokploy...)? Run only the push service and point
+# your proxy at port 3000. docs/DEPLOY.md has the details.
+
+services:
+  push:
+    build: ./server
+    restart: unless-stopped
+    environment:
+      PUSH_TOKEN: ${PUSH_TOKEN:?set PUSH_TOKEN in .env (openssl rand -hex 32)}
+      PUSH_PUBLIC_URL: https://${PUSH_DOMAIN:?set PUSH_DOMAIN in .env}
+      PUSH_ROOT_REDIRECT: ${PUSH_ROOT_REDIRECT:-}
+    volumes:
+      - push-data:/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    command: caddy reverse-proxy --from ${PUSH_DOMAIN} --to push:3000
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+    depends_on:
+      - push
+
+volumes:
+  push-data:
+  caddy-data:

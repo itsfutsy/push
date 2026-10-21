@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Menu bar app: no Dock icon until the main window shows (the app switches activation policy). -->
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Push captures the area you select so it can upload it.</string>
+	<!-- Accept any file from the Share extension, Open With and drops on the app, but never be the default app. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>File</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>None</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
+	<!-- Only push://upload?id=<uuid> (Share extension fallback) is accepted; see src/intake.rs. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>io.github.itsfutsy.push</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>push</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

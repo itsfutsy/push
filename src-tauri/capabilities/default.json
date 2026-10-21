@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Event listening (Rust events, drag and drop state) and title bar dragging (and double-click to zoom the Library). All real work goes through app commands.",
+  "windows": ["main", "hud", "library"],
+  "permissions": ["core:event:default", "core:window:allow-start-dragging", "core:window:allow-internal-toggle-maximize"]
+}

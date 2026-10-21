@@ -1,0 +1,76 @@
+/* Desktop and window stand-ins. In the app, AppKit draws all of this natively. */
+:root { color-scheme: light dark; --win-w: 380px; --win-h: 520px; }
+html, body { margin: 0; height: 100%; overflow: hidden; font: 12px -apple-system, system-ui, sans-serif; }
+
+/* A Tahoe-like wallpaper. (Snapshots don't render backdrop-filter, so keep it soft like a blurred desktop.) */
+.desktop { position: fixed; inset: 0; background:
+  radial-gradient(60% 70% at 15% 20%, #8fb6ff 0, transparent 70%),
+  radial-gradient(50% 60% at 85% 75%, #c59cff 0, transparent 70%),
+  radial-gradient(40% 50% at 70% 10%, #ffc6a8 0, transparent 70%),
+  linear-gradient(160deg, #dfe8ff, #efe2ff); }
+@media (prefers-color-scheme: dark) {
+  .desktop { background:
+    radial-gradient(60% 70% at 15% 20%, #1d3a8a 0, transparent 70%),
+    radial-gradient(50% 60% at 85% 75%, #4b2380 0, transparent 70%),
+    radial-gradient(40% 50% at 70% 10%, #7a3a2a 0, transparent 70%),
+    linear-gradient(160deg, #0d1226, #1a1028); }
+}
+
+/* Main window: the popover material, 16pt corners, window shadow */
+.win {
+  position: fixed; left: 50%; top: 50%; width: var(--win-w); height: var(--win-h); translate: -50% -50%;
+  border-radius: 16px; overflow: hidden;
+  background: rgba(244,244,246,.74); -webkit-backdrop-filter: blur(40px) saturate(1.8); backdrop-filter: blur(40px) saturate(1.8);
+  box-shadow: 0 0 0 .5px rgba(0,0,0,.2), 0 24px 64px rgba(0,0,0,.28), 0 4px 16px rgba(0,0,0,.12);
+}
+@media (prefers-color-scheme: dark) {
+  .win { background: rgba(34,34,36,.76); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.16), 0 0 0 .5px rgba(0,0,0,.7), 0 24px 64px rgba(0,0,0,.55); }
+}
+.win iframe { display: block; width: var(--win-w); height: var(--win-h); border: 0; background: transparent; color-scheme: light dark; }
+
+/* Traffic lights: close at x 9 y 9, 14pt, 23pt pitch; zoom is disabled (not maximizable) */
+.lights { position: absolute; left: 9px; top: 9px; display: flex; gap: 9px; pointer-events: none; }
+.lights i { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.14); }
+.lights i:nth-child(1) { background: #ff5f57; }
+.lights i:nth-child(2) { background: #febc2e; }
+.lights i:nth-child(3) { background: rgba(0,0,0,.1); box-shadow: none; }
+@media (prefers-color-scheme: dark) { .lights i:nth-child(3) { background: rgba(255,255,255,.14); } }
+
+/* Linux: native decorations above an opaque page, no traffic lights */
+.gtk-title { display: none; }
+.linux .lights { display: none; }
+.linux .win { height: calc(var(--win-h) + 38px); border-radius: 12px 12px 0 0; background: #fafafa; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.linux .gtk-title { display: flex; align-items: center; justify-content: center; position: relative; height: 38px; font-weight: 700; font-size: 13px;
+  color: #2e3436; background: #ebebeb; box-shadow: inset 0 -1px rgba(0,0,0,.08); }
+.linux .gtk-title i { position: absolute; right: 10px; top: 10px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,.08); }
+@media (prefers-color-scheme: dark) {
+  .linux .win { background: #242424; }
+  .linux .gtk-title { color: #fff; background: #303030; box-shadow: inset 0 -1px rgba(0,0,0,.4); }
+  .linux .gtk-title i { background: rgba(255,255,255,.1); }
+}
+
+/* Library: an ordinary titled window with a full-size content view (the page paints it) and 52pt toolbar */
+[data-page="library"] { --win-w: 880px; --win-h: 620px; }
+[data-page="library"] .win { border-radius: 14px; }
+[data-page="library"] .lights { left: 18px; top: 19px; }
+[data-page="library"] .lights i:nth-child(3) { background: #28c840; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.14); }
+
+/* HUD: approximates native Liquid Glass Regular (radius 18) */
+[data-page="hud"] { --win-w: 300px; --win-h: 64px; }
+[data-page="hud"] .lights { display: none; }
+[data-page="hud"] .win {
+  left: auto; top: auto; right: 20px; bottom: 20px; translate: none; border-radius: 18px;
+  background: rgba(255,255,255,.6); -webkit-backdrop-filter: blur(24px) saturate(1.8); backdrop-filter: blur(24px) saturate(1.8);
+  box-shadow: inset 0 0 0 .5px rgba(255,255,255,.55), inset 0 1px 0 rgba(255,255,255,.6), 0 0 0 .5px rgba(0,0,0,.12),
+              0 10px 30px -6px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.08);
+  transition: opacity .2s;
+}
+@media (prefers-color-scheme: dark) {
+  [data-page="hud"] .win { background: rgba(40,40,44,.55);
+    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.14), inset 0 1px 0 rgba(255,255,255,.12), 0 0 0 .5px rgba(0,0,0,.5), 0 10px 30px -6px rgba(0,0,0,.5); }
+}
+[data-page="hud"] .win.dismissed { opacity: 0; }
+.shot[data-page="hud"] .win { right: auto; bottom: auto; left: 40px; top: 40px; }
+
+.bar { position: fixed; left: 12px; top: 12px; display: flex; gap: 6px; flex-wrap: wrap; max-width: 260px; }
+.bar button, .bar select { font: inherit; }

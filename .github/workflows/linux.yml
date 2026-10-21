@@ -1,0 +1,49 @@
+name: linux
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: deb + AppImage (x86_64)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # attach the bundles to the release
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # The npm package ships a prebuilt tauri-cli, much faster than cargo install.
+      # 2.12+ is required: older CLIs make AppImages that crash on Mesa 25+ distros.
+      - name: Build
+        run: npx --yes @tauri-apps/cli@~2.12.3 build --bundles deb,appimage
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: push-linux-x86_64
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+
+      - name: Attach to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+          fail_on_unmatched_files: true

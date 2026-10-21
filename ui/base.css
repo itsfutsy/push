@@ -1,0 +1,103 @@
+/* Push design tokens and base rules, shared by the main window and the HUD.
+   Colors are AppKit's NSColor values resolved in sRGB; on macOS the -apple-system-* keywords
+   take over so Increase Contrast and future OS tweaks come through. */
+:root {
+  color-scheme: light dark;
+  --font: -apple-system, system-ui, "Adwaita Sans", Inter, Cantarell, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, Menlo, "Adwaita Mono", "DejaVu Sans Mono", monospace;
+
+  --label: rgba(0,0,0,.847); --label-2: rgba(0,0,0,.498); --label-3: rgba(0,0,0,.259);
+  --label-4: rgba(0,0,0,.098); --label-5: rgba(0,0,0,.047);
+  --separator: rgba(0,0,0,.098);
+  --fill: rgba(0,0,0,.098); --fill-2: rgba(0,0,0,.078); --fill-3: rgba(0,0,0,.047); --fill-4: rgba(0,0,0,.027);
+  /* Push button fills (rest, hover, press) and grouped-form boxes */
+  --control: rgba(0,0,0,.06); --control-hover: rgba(0,0,0,.09); --control-press: rgba(0,0,0,.14);
+  --group: rgba(255,255,255,.5); --group-edge: rgba(0,0,0,.07);
+  --bg-window: #f2f2f4; --bg-field: #fff; --field-edge: rgba(0,0,0,.14);
+  --focus: rgba(0,103,244,.5);
+  --accent: #007aff; --on-accent: #fff;
+  --blue: #0088ff; --green: #34c759; --red: #ff383c; --orange: #ff8d28; --gray: #8e8e93;
+  --thumb-edge: rgba(0,0,0,.1);
+
+  --r-window: 16px; --r-hud: 18px; --r-card: 12px; --r-row: 10px; --r-control: 6px; --r-thumb: 4px;
+
+  /* Springs sampled from SwiftUI Spring(duration:bounce:) */
+  --ease-smooth: linear(0,.068,.208,.363,.505,.625,.721,.796,.852,.894,.924,.946,.962,.974,.982,.987,.991,.994,.996,.997,1);
+  --ease-snappy: linear(0,.065,.206,.369,.525,.658,.765,.846,.905,.946,.972,.989,.999,1.004,1.006,1.006,1.006,1.005,1.004,1.003,1);
+  --ease-bouncy: linear(0,.084,.268,.476,.665,.816,.923,.992,1.029,1.044,1.045,1.039,1.03,1.021,1.012,1.006,1.002,1,.998,.998,1);
+  --ease-exit: cubic-bezier(.4,0,1,1);
+  --dur-smooth: 470ms; --dur-snappy: 385ms; --dur-bouncy: 580ms; --dur-fast: 100ms;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --label: rgba(255,255,255,.847); --label-2: rgba(255,255,255,.549); --label-3: rgba(255,255,255,.247);
+  --label-4: rgba(255,255,255,.098); --label-5: rgba(255,255,255,.047);
+  --separator: rgba(255,255,255,.098);
+  --fill: rgba(255,255,255,.098); --fill-2: rgba(255,255,255,.078); --fill-3: rgba(255,255,255,.047); --fill-4: rgba(255,255,255,.027);
+  --control: rgba(255,255,255,.1); --control-hover: rgba(255,255,255,.14); --control-press: rgba(255,255,255,.2);
+  --group: rgba(255,255,255,.045); --group-edge: rgba(255,255,255,.08);
+  --bg-window: #232325; --bg-field: rgba(255,255,255,.06); --field-edge: rgba(255,255,255,.12);
+  --focus: rgba(26,169,255,.5);
+  --blue: #0091ff; --green: #30d158; --red: #ff4245; --orange: #ff9230; --gray: #98989d;
+  --thumb-edge: rgba(255,255,255,.1);
+}}
+@supports (color: -apple-system-label) { :root {
+  --label: -apple-system-label; --label-2: -apple-system-secondary-label; --label-3: -apple-system-tertiary-label;
+  --label-4: -apple-system-quaternary-label; --label-5: -apple-system-quinary-label; --separator: -apple-system-separator;
+  --blue: -apple-system-blue; --green: -apple-system-green; --red: -apple-system-red; --orange: -apple-system-orange;
+}}
+@supports (color: AccentColor) { :root { --accent: AccentColor; } }
+@media (prefers-reduced-motion: reduce) { :root {
+  --ease-smooth: ease; --ease-snappy: ease; --ease-bouncy: ease;
+  --dur-smooth: 150ms; --dur-snappy: 150ms; --dur-bouncy: 150ms;
+}}
+
+html {
+  font: 13px/16px var(--font); color: var(--label); background: transparent;
+  height: 100%; overflow: hidden; -webkit-user-select: none; cursor: default; -webkit-text-size-adjust: none;
+}
+/* Linux has no window material; Reduce Transparency makes the native material opaque anyway */
+html.linux { background: var(--bg-window); }
+@media (prefers-reduced-transparency: reduce) { html { background: var(--bg-window); } }
+body { margin: 0; height: 100%; }
+img, svg, a { -webkit-user-drag: none; }
+h1, h2, p, ul { margin: 0; padding: 0; font: inherit; }
+ul { list-style: none; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: default; }
+input { -webkit-user-select: text; cursor: text; font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+:focus { outline: none; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 0; }
+.num { font-variant-numeric: tabular-nums; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Lucide glyphs */
+.i { display: block; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Push buttons: capsules, monochrome, with hover and press states */
+.btn {
+  height: 24px; padding: 0 12px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--control); color: var(--label); white-space: nowrap; flex: none;
+  transition: background-color var(--dur-fast), opacity var(--dur-fast);
+}
+.btn:hover { background: var(--control-hover); }
+.btn:active { background: var(--control-press); }
+.btn.small { height: 20px; padding: 0 10px; border-radius: 10px; font-size: 11px; line-height: 14px; }
+.btn.danger { background: var(--red); color: #fff; }
+.btn.danger:hover { background: color-mix(in srgb, var(--red) 90%, #000); }
+.btn.danger:active { background: color-mix(in srgb, var(--red) 78%, #000); }
+.btn:disabled { opacity: .5; pointer-events: none; }
+
+/* Round icon buttons */
+.icon-btn {
+  width: 24px; height: 24px; border-radius: 12px; display: grid; place-items: center; flex: none;
+  color: var(--label-2); transition: background-color var(--dur-fast), color var(--dur-fast);
+}
+.icon-btn:hover { background: var(--fill-3); color: var(--label); }
+.icon-btn:active { background: var(--fill-2); }
+.icon-btn .i { width: 16px; height: 16px; }
+
+/* Determinate progress ring: a track and a bar (pathLength 100, so dashoffset = 100 - percent) */
+.ring { display: block; transform: rotate(-90deg); }
+.ring circle { fill: none; }
+.ring .track { stroke: var(--label-4); }
+.ring .bar { stroke: var(--accent); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; transition: stroke-dashoffset .2s linear; }

@@ -1,0 +1,20 @@
+<!doctype html>
+<!-- Push UI preview harness (never shipped). Serve the repo with `python3 dev/serve.py` and open
+     http://127.0.0.1:5174/dev/?s=list  (scenarios: dev/scenarios.js; screenshots: dev/shots.sh) -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Push preview</title>
+<link rel="stylesheet" href="harness.css">
+<script type="module" src="harness.js"></script>
+</head>
+<body>
+<div class="desktop" aria-hidden="true"></div>
+<div id="win" class="win">
+  <div class="gtk-title" aria-hidden="true">Push<i></i></div>
+  <iframe id="frame" title="Push"></iframe>
+  <div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>
+</div>
+<nav id="bar" class="bar"></nav>
+</body>
+</html>
