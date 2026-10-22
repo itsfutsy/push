@@ -35,8 +35,6 @@ pub(super) async fn capture(out: &Path) -> Shot {
     }
 }
 
-pub(super) fn open_permission_settings() {}
-
 /// `desktop` is `XDG_CURRENT_DESKTOP`, a colon-separated list such as "ubuntu:GNOME".
 fn backend(desktop: &str, wayland: bool, installed: impl Fn(&str) -> bool) -> Backend {
     let is = |name: &str| desktop.split(':').any(|d| d.eq_ignore_ascii_case(name));

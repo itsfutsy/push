@@ -13,9 +13,6 @@ unsafe extern "C" {
     safe fn CGRequestScreenCaptureAccess() -> bool;
 }
 
-const SCREEN_RECORDING_PANE: &str =
-    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
-
 pub(super) async fn capture(out: &Path) -> Shot {
     // Without permission screencapture still lets the user drag a region, then writes nothing.
     let allowed = tauri::async_runtime::spawn_blocking(|| {
@@ -49,13 +46,4 @@ fn outcome(code: Option<i32>, has_image: bool, stderr: &[u8], out: &Path) -> Sho
         (Some(0), false) => Shot::Cancelled,
         _ => Shot::Failed(failure("screencapture", code, stderr)),
     }
-}
-
-pub(super) fn open_permission_settings() {
-    // On a thread so the caller never waits and the child is reaped.
-    std::thread::spawn(|| {
-        std::process::Command::new("/usr/bin/open")
-            .arg(SCREEN_RECORDING_PANE)
-            .status()
-    });
 }

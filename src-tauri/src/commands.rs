@@ -7,7 +7,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::model::{AppInfo, Connection, ConnectionStatus, HudPayload, Settings, View};
 use crate::net::{Api, validate_server_url};
-use crate::{Core, capture, intake, queue, shortcut, store, tray, windows};
+use crate::{Core, intake, queue, shortcut, store, tray, windows};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -155,8 +155,8 @@ pub async fn hud_dismiss(app: AppHandle) {
 }
 
 #[tauri::command]
-pub async fn open_permission_settings() -> Result<()> {
-    tauri::async_runtime::spawn_blocking(capture::open_permission_settings)
-        .await
+pub async fn open_permission_settings(app: AppHandle) -> Result<()> {
+    app.opener()
+        .open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture", None::<&str>)
         .map_err(|_| "Couldn’t open System Settings.".into())
 }

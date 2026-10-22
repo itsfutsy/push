@@ -103,5 +103,3 @@ fn overlay_in_front() -> bool {
         OVERLAY.iter().any(|exe| path.ends_with(&format!("\\{exe}")))
     }
 }
-
-pub(super) fn open_permission_settings() {}

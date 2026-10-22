@@ -44,11 +44,6 @@ pub async fn capture_region(dir: &Path) -> Shot {
     shot
 }
 
-/// macOS: open System Settings > Screen & System Audio Recording. Elsewhere: no-op.
-pub fn open_permission_settings() {
-    platform::open_permission_settings();
-}
-
 /// Creates `dir` (owner-only: captures can contain anything on screen; on Windows the per-user
 /// cache folder already is) and returns an unused PNG path in it.
 async fn new_capture_path(dir: &Path) -> std::io::Result<PathBuf> {
