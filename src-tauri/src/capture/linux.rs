@@ -9,7 +9,6 @@ use tokio::process::Command;
 
 use super::{Shot, failure, has_image};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Backend {
     Spectacle,
     SlurpGrim,
@@ -19,11 +18,8 @@ enum Backend {
 }
 
 pub(super) async fn capture(out: &Path) -> Shot {
-    let desktop = env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-    let wayland = env::var_os("WAYLAND_DISPLAY").is_some()
-        || env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland");
     // Looking through PATH touches the disk, so keep it off the async runtime.
-    let backend = tauri::async_runtime::spawn_blocking(move || backend(&desktop, wayland, on_path))
+    let backend = tauri::async_runtime::spawn_blocking(backend)
         .await
         .unwrap_or(Backend::Portal);
     match backend {
@@ -35,20 +31,23 @@ pub(super) async fn capture(out: &Path) -> Shot {
     }
 }
 
-/// `desktop` is `XDG_CURRENT_DESKTOP`, a colon-separated list such as "ubuntu:GNOME".
-fn backend(desktop: &str, wayland: bool, installed: impl Fn(&str) -> bool) -> Backend {
+fn backend() -> Backend {
+    // A colon-separated list such as "ubuntu:GNOME".
+    let desktop = env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+    let wayland = env::var_os("WAYLAND_DISPLAY").is_some()
+        || env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland");
     let is = |name: &str| desktop.split(':').any(|d| d.eq_ignore_ascii_case(name));
     let (gnome, kde) = (is("GNOME"), is("KDE"));
-    if kde && installed("spectacle") {
+    if kde && on_path("spectacle") {
         // The KDE portal has no region mode.
         Backend::Spectacle
-    } else if wayland && !gnome && !kde && installed("slurp") && installed("grim") {
+    } else if wayland && !gnome && !kde && on_path("slurp") && on_path("grim") {
         // wlroots compositors (Sway, Hyprland, river, niri, labwc). Their portals run these anyway,
         // with worse defaults (a shared /tmp/out.png, or a silent full-screen shot without slurp).
         Backend::SlurpGrim
-    } else if !wayland && !gnome && installed("maim") {
+    } else if !wayland && !gnome && on_path("maim") {
         Backend::Maim
-    } else if !wayland && !gnome && installed("scrot") {
+    } else if !wayland && !gnome && on_path("scrot") {
         Backend::Scrot
     } else {
         // GNOME 46+ opens its own screenshot UI here.

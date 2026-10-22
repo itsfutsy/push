@@ -18,7 +18,6 @@ mod windows;
 #[cfg(windows)]
 use windows as platform;
 
-#[derive(Debug)]
 pub enum Shot {
     /// A non-empty PNG inside the capture folder. The caller owns it (and deletes it after upload).
     Done(PathBuf),

@@ -32,18 +32,13 @@ pub(super) async fn capture(out: &Path) -> Shot {
         .output()
         .await;
     match result {
-        Ok(o) => outcome(o.status.code(), has_image(out).await, &o.stderr, out),
+        Ok(o) if o.status.success() && has_image(out).await => Shot::Done(out.to_path_buf()),
+        // Exit 0 without a file is a cancel: Esc, or Control held so the shot went to the
+        // clipboard.
+        Ok(o) if o.status.success() => Shot::Cancelled,
+        // macOS 27 reports a missing permission as exit 1, which the preflight check normally
+        // rules out.
+        Ok(o) => Shot::Failed(failure("screencapture", o.status.code(), &o.stderr)),
         Err(e) => Shot::Failed(format!("Couldn’t run screencapture: {e}")),
-    }
-}
-
-/// Exit 0 with a file is a shot. Exit 0 without one is a cancel: Esc, or Control held so the shot
-/// went to the clipboard. Anything else is an error (macOS 27 reports a missing permission as
-/// exit 1, which the preflight check normally rules out).
-fn outcome(code: Option<i32>, has_image: bool, stderr: &[u8], out: &Path) -> Shot {
-    match (code, has_image) {
-        (Some(0), true) => Shot::Done(out.to_path_buf()),
-        (Some(0), false) => Shot::Cancelled,
-        _ => Shot::Failed(failure("screencapture", code, stderr)),
     }
 }
