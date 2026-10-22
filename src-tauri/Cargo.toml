@@ -36,7 +36,6 @@ notify-rust = "4.18"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.13", features = ["screenshot"] }
-url = "2"
 zbus = "5"
 
 [target.'cfg(windows)'.dependencies]

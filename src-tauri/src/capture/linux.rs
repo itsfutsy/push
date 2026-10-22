@@ -159,13 +159,15 @@ async fn portal(out: &Path) -> Shot {
     use ashpd::desktop::screenshot::Screenshot;
 
     let request = Screenshot::request().interactive(true).modal(false);
-    let uri = match request.send().await.and_then(|r| r.response()) {
-        Ok(screenshot) => screenshot.uri().as_str().to_owned(),
+    let source = match request.send().await.and_then(|r| r.response()) {
+        Ok(shot) => tauri::Url::parse(shot.uri().as_str())
+            .ok()
+            .and_then(|u| u.to_file_path().ok()),
         // GNOME reports a user cancel as Other, not Cancelled.
         Err(ashpd::Error::Response(_)) => return Shot::Cancelled,
         Err(e) => return Shot::Failed(format!("The screenshot portal failed: {e}")),
     };
-    let Some(source) = file_path(&uri) else {
+    let Some(source) = source else {
         return Shot::Failed("The screenshot portal didn’t return a local file.".into());
     };
     // Copy, never move: on GNOME the original is the user's own ~/Pictures/Screenshots history,
@@ -175,9 +177,4 @@ async fn portal(out: &Path) -> Shot {
         Ok(_) => Shot::Cancelled,
         Err(e) => Shot::Failed(format!("Couldn’t copy the screenshot: {e}")),
     }
-}
-
-/// Turns a `file://` URI (percent-encoded) into a path.
-fn file_path(uri: &str) -> Option<std::path::PathBuf> {
-    url::Url::parse(uri).ok()?.to_file_path().ok()
 }
