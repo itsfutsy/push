@@ -49,18 +49,19 @@ fn unexpected() -> UploadError {
 enum Resume {
     At(u64),
     Done,
+    Unknown,
 }
 
-/// Asks the server how much of `name` it has. `None` means "unknown, keep going".
-async fn resume_point(api: &Api, name: &str, total: u64) -> Result<Option<Resume>, UploadError> {
+/// Asks the server how much of `name` it has.
+async fn resume_point(api: &Api, name: &str, total: u64) -> Result<Resume, UploadError> {
     match api.head(name).await {
-        Ok(Head::Partial(offset)) if offset <= total => Ok(Some(Resume::At(offset))),
-        Ok(Head::Missing) => Ok(Some(Resume::At(0))),
-        Ok(Head::Complete(len)) if len == total => Ok(Some(Resume::Done)),
+        Ok(Head::Partial(offset)) if offset <= total => Ok(Resume::At(offset)),
+        Ok(Head::Missing) => Ok(Resume::At(0)),
+        Ok(Head::Complete(len)) if len == total => Ok(Resume::Done),
         Ok(Head::Status(401)) => Err(auth_error()),
-        Ok(Head::Status(s)) if s >= 500 => Ok(None),
+        Ok(Head::Status(s)) if s >= 500 => Ok(Resume::Unknown),
         Ok(_) => Err(unexpected()),
-        Err(_) => Ok(None),
+        Err(_) => Ok(Resume::Unknown),
     }
 }
 
@@ -93,9 +94,9 @@ pub async fn send(
     let mut offset = 0;
     if resume {
         match resume_point(api, name, total).await? {
-            Some(Resume::At(at)) => offset = at,
-            Some(Resume::Done) => return Ok(Sent::Exists),
-            None => {}
+            Resume::At(at) => offset = at,
+            Resume::Done => return Ok(Sent::Exists),
+            Resume::Unknown => {}
         }
     }
     let mut retries = 0;
@@ -125,9 +126,9 @@ pub async fn send(
             // unlikely) the random name is taken: only the first counts as success. If the
             // server can't say which right now, ask again after the usual backoff.
             Ok(Reply::Exists) => match resume_point(api, name, total).await? {
-                Some(Resume::Done) => return Ok(Sent::Exists),
-                Some(Resume::At(_)) => return Err(server_error("A file with this name already exists.")),
-                None => network_error(),
+                Resume::Done => return Ok(Sent::Exists),
+                Resume::At(_) => return Err(server_error("A file with this name already exists.")),
+                Resume::Unknown => network_error(),
             },
             Ok(Reply::Status(401)) => return Err(auth_error()),
             Ok(Reply::Status(413)) => return Err(server_error("The file is too large for the server.")),
@@ -140,14 +141,14 @@ pub async fn send(
         retries += 1;
         tokio::time::sleep(*delay).await;
         match resume_point(api, name, total).await? {
-            Some(Resume::At(at)) => {
+            Resume::At(at) => {
                 if at > start {
                     retries = 0;
                 }
                 offset = at;
             }
-            Some(Resume::Done) => return Ok(Sent::Exists),
-            None => {}
+            Resume::Done => return Ok(Sent::Exists),
+            Resume::Unknown => {}
         }
     }
 }

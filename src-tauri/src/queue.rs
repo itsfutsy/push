@@ -63,15 +63,12 @@ struct Item {
     path: Option<PathBuf>,
     origin: Origin,
     batch: u64,
-    /// The file as the last upload attempt read it. `Some` once an attempt may have left
-    /// bytes on the server.
-    stamp: Option<Stamp>,
+    last_attempt: Option<Stamp>,
 }
 
 impl Item {
-    /// Part or all of the file may be on the server.
-    fn started(&self) -> bool {
-        self.stamp.is_some() || self.upload.status == Status::Uploading
+    fn may_be_on_server(&self) -> bool {
+        self.last_attempt.is_some() || self.upload.status == Status::Uploading
     }
 }
 
@@ -147,7 +144,7 @@ impl Uploads {
         let mut uploads = Self::default();
         for upload in done.into_iter().rev() {
             let seq = uploads.next();
-            uploads.items.push(Item { upload, seq, path: None, origin: Origin::File, batch: 0, stamp: None });
+            uploads.items.push(Item { upload, seq, path: None, origin: Origin::File, batch: 0, last_attempt: None });
         }
         uploads
     }
@@ -203,7 +200,7 @@ impl Uploads {
                 queued.push(upload.id.clone());
             }
             let seq = self.next();
-            self.items.push(Item { upload, seq, path: Some(path), origin, batch, stamp: None });
+            self.items.push(Item { upload, seq, path: Some(path), origin, batch, last_attempt: None });
         }
         if !queued.is_empty() {
             self.batches.insert(batch, Batch { ids: queued.clone(), urls: HashMap::new() });
@@ -222,14 +219,12 @@ impl Uploads {
         self.batches.retain(|batch, _| pending.contains(batch));
     }
 
-    /// Keeps at most `MAX_DONE` finished uploads.
     fn trim_done(&mut self) {
         let keep: HashSet<String> =
             self.done().into_iter().take(store::MAX_DONE).map(|u| u.id).collect();
         self.items.retain(|i| i.upload.status != Status::Done || keep.contains(&i.upload.id));
     }
 
-    /// What to delete once `item` is gone or done.
     fn cleanup_for(&self, path: Option<PathBuf>, origin: &Origin) -> Cleanup {
         match origin {
             Origin::File => Cleanup::None,
@@ -313,8 +308,8 @@ async fn add_thumbnail(app: &AppHandle, id: &str) {
     let Some((path, name, size, kind)) = source else { return };
     let scratch = core.cache_dir.join("quicklook");
     let Some(img) = preview::make(&core.previews_dir, &scratch, id, &path, ext_of(&name), size).await else { return };
-    // Cancelled while the preview was made: nothing will remove it now.
-    if core.uploads.lock().unwrap().get(id).is_none() {
+    let cancelled = core.uploads.lock().unwrap().get(id).is_none();
+    if cancelled {
         return preview::remove(&core.previews_dir, id);
     }
     if kind != Kind::Image {
@@ -406,8 +401,7 @@ struct Job {
     id: String,
     name: String,
     path: PathBuf,
-    /// The file as the previous attempt read it.
-    stamp: Option<Stamp>,
+    last_attempt: Option<Stamp>,
 }
 
 /// Runs queued uploads one at a time, in order.
@@ -421,7 +415,7 @@ pub async fn worker(app: AppHandle, mut jobs: mpsc::UnboundedReceiver<String>) {
             let Some(path) = item.path.clone() else { continue };
             item.upload.status = Status::Uploading;
             item.upload.sent = 0;
-            let job = Job { id: id.clone(), name: item.upload.name.clone(), path, stamp: item.stamp };
+            let job = Job { id: id.clone(), name: item.upload.name.clone(), path, last_attempt: item.last_attempt };
             let upload = item.upload.clone();
             uploads.current = Some((id.clone(), cancel));
             (job, upload)
@@ -476,7 +470,7 @@ async fn run(app: &AppHandle, job: &Job) -> Result<(String, u64), UploadError> {
     }
     let api = Api::new(core.http.clone(), base.clone(), token);
     let stamp = Stamp::of(&meta);
-    let start = start_for(job.stamp, stamp);
+    let start = start_for(job.last_attempt, stamp);
     if start == Start::Restart {
         // Resuming would splice the old version's bytes into the new one. The old stamp is
         // kept until this succeeds, so a failed delete is tried again on the next attempt.
@@ -488,7 +482,7 @@ async fn run(app: &AppHandle, job: &Job) -> Result<(String, u64), UploadError> {
         }
     }
     if let Some(item) = core.uploads.lock().unwrap().get_mut(&job.id) {
-        item.stamp = Some(stamp);
+        item.last_attempt = Some(stamp);
     }
     let progress = progress_reporter(app, &job.id, total);
     let resume = start == Start::Resume;
@@ -547,7 +541,7 @@ fn finish(app: &AppHandle, id: &str, result: Result<(String, u64), UploadError>)
 /// Cancels a queued or uploading item, or dismisses a failed one.
 pub fn cancel(app: &AppHandle, id: &str) -> Result<(), String> {
     let core = app.state::<Core>();
-    let (cleanup, sent) = {
+    let (cleanup, on_server) = {
         let mut uploads = core.uploads.lock().unwrap();
         match uploads.get(id) {
             None => return Err(GONE.into()),
@@ -561,12 +555,12 @@ pub fn cancel(app: &AppHandle, id: &str) -> Result<(), String> {
             let _ = cancel.send(());
         }
         uploads.prune_batches();
-        let sent = item.started().then(|| item.upload.name.clone());
-        (uploads.cleanup_for(item.path, &item.origin), sent)
+        let on_server = item.may_be_on_server().then(|| item.upload.name.clone());
+        (uploads.cleanup_for(item.path, &item.origin), on_server)
     };
     cleanup.run();
     preview::remove(&core.previews_dir, id);
-    if let Some(name) = sent {
+    if let Some(name) = on_server {
         discard(app, name);
     }
     emit_uploads(app);
