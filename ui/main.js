@@ -17,7 +17,6 @@ const state = {
   errorId: null,     // the failure the drop zone reports
   confirmId: null,   // row asking "Delete …?"
 };
-const lastStatus = new Map(); // id -> status, to spot transitions
 const thumbs = new Map();     // id -> local data URL, kept so a finished row doesn't flash while the remote image loads
 
 const configured = () => state.info.hasToken && !!state.info.settings.serverUrl;
@@ -25,19 +24,19 @@ const configured = () => state.info.hasToken && !!state.info.settings.serverUrl;
 // ---------------------------------------------------------------- uploads
 
 function applyUploads(list, initial = false) {
+  const before = new Map(state.uploads.map((u) => [u.id, u.status]));
   // A new attempt clears the old error, then a failure among the new items reports itself.
-  if (!initial && list.some((u) => !lastStatus.has(u.id))) state.errorId = null;
+  if (!initial && list.some((u) => !before.has(u.id))) state.errorId = null;
   for (const u of list) {
-    const before = lastStatus.get(u.id);
+    const was = before.get(u.id);
     if (!initial) {
-      if (u.status === 'done' && before && before !== 'done') succeed(u);
-      if (u.status === 'failed' && before !== 'failed') state.errorId = u.id;
+      if (u.status === 'done' && was && was !== 'done') succeed(u);
+      if (u.status === 'failed' && was !== 'failed') state.errorId = u.id;
     }
     if (u.thumb) thumbs.set(u.id, u.thumb);
   }
-  lastStatus.clear();
-  for (const u of list) lastStatus.set(u.id, u.status);
-  for (const id of thumbs.keys()) if (!lastStatus.has(id)) thumbs.delete(id);
+  const ids = new Set(list.map((u) => u.id));
+  for (const id of thumbs.keys()) if (!ids.has(id)) thumbs.delete(id);
   if (initial) state.errorId = list.find((u) => u.status === 'failed')?.id ?? null;
   state.uploads = list;
   renderZone();
