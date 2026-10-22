@@ -17,15 +17,11 @@ const DECODE_MAX: u64 = 32 * 1024 * 1024;
 #[cfg(target_os = "macos")]
 const QUICK_LOOK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
-fn path(dir: &Path, id: &str) -> PathBuf {
-    dir.join(id)
-}
-
 /// The saved preview, or a new one made from `source`, the local file of an upload of type `ext`.
 /// `None` when there is nothing to show (archives, audio) or it can't be read.
 pub async fn make(dir: &Path, scratch: &Path, id: &str, source: &Path, ext: &str, size: u64) -> Option<DynamicImage> {
-    let saved = path(dir, id);
-    if let Ok(img) = decode(saved.clone()).await {
+    let saved = dir.join(id);
+    if let Some(img) = decode(saved.clone()).await {
         return Some(img);
     }
     let img = render(scratch, id, source, ext, size).await?;
@@ -41,7 +37,7 @@ pub async fn make(dir: &Path, scratch: &Path, id: &str, source: &Path, ext: &str
 async fn render(scratch: &Path, id: &str, source: &Path, ext: &str, size: u64) -> Option<DynamicImage> {
     if size <= DECODE_MAX
         && image::ImageFormat::from_extension(ext).is_some()
-        && let Ok(img) = decode(source.to_owned()).await
+        && let Some(img) = decode(source.to_owned()).await
     {
         return Some(img);
     }
@@ -57,10 +53,11 @@ async fn render(scratch: &Path, id: &str, source: &Path, ext: &str, size: u64) -
     }
 }
 
-async fn decode(path: PathBuf) -> image::ImageResult<DynamicImage> {
-    tauri::async_runtime::spawn_blocking(move || image::ImageReader::open(&path)?.with_guessed_format()?.decode())
+async fn decode(path: PathBuf) -> Option<DynamicImage> {
+    tauri::async_runtime::spawn_blocking(move || image::ImageReader::open(&path).ok()?.with_guessed_format().ok()?.decode().ok())
         .await
-        .unwrap_or_else(|e| Err(image::ImageError::IoError(std::io::Error::other(e))))
+        .ok()
+        .flatten()
 }
 
 /// Videos, PDFs and the images `image` can't decode (HEIC, TIFF, AVIF). Quick Look shows archives
@@ -100,7 +97,7 @@ async fn quick_look(scratch: &Path, id: &str, source: &Path) -> Option<DynamicIm
         entries.flatten().map(|e| e.path()).find(|p| p.extension().is_some_and(|e| e == "png"))
     });
     let img = match (ran, png) {
-        (Ok(Ok(status)), Some(png)) if status.success() => decode(png).await.ok(),
+        (Ok(Ok(status)), Some(png)) if status.success() => decode(png).await,
         _ => None,
     };
     let _ = std::fs::remove_dir_all(&out);
@@ -108,7 +105,7 @@ async fn quick_look(scratch: &Path, id: &str, source: &Path) -> Option<DynamicIm
 }
 
 pub fn remove(dir: &Path, id: &str) {
-    if let Err(e) = std::fs::remove_file(path(dir, id))
+    if let Err(e) = std::fs::remove_file(dir.join(id))
         && e.kind() != std::io::ErrorKind::NotFound
     {
         eprintln!("push: couldn’t remove a preview: {e}");
@@ -129,9 +126,10 @@ pub fn prune(dir: &Path, keep: &HashSet<String>) {
 pub async fn respond(dir: &Path, uri_path: &str) -> Response<Vec<u8>> {
     let id = uri_path.trim_start_matches('/');
     let valid = (1..=32).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric());
-    let Some(bytes) = (if valid { tokio::fs::read(path(dir, id)).await.ok() } else { None }) else {
+    if !valid {
         return not_found();
-    };
+    }
+    let Ok(bytes) = tokio::fs::read(dir.join(id)).await else { return not_found() };
     let kind = if bytes.starts_with(b"\x89PNG") { "image/png" } else { "image/jpeg" };
     Response::builder()
         .header(header::CONTENT_TYPE, kind)
