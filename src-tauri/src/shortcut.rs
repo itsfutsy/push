@@ -14,6 +14,12 @@ pub fn supported() -> bool {
     !cfg!(target_os = "linux") || !capture::wayland()
 }
 
+/// X11 keeps the keyboard grabbed for Push until the shortcut's key comes back up, and region
+/// pickers can't grab it meanwhile (Cinnamon's then never appears and never answers), so Linux
+/// captures on release.
+const CAPTURE_ON: ShortcutState =
+    if cfg!(target_os = "linux") { ShortcutState::Released } else { ShortcutState::Pressed };
+
 #[derive(Clone, Copy)]
 pub enum Hotkey {
     Keys(Shortcut),
@@ -43,7 +49,7 @@ fn register(app: &AppHandle, hotkey: Hotkey) -> Result<(), String> {
         Hotkey::Keys(shortcut) => app
             .global_shortcut()
             .on_shortcut(shortcut, |app, _, event| {
-                if event.state == ShortcutState::Pressed {
+                if event.state == CAPTURE_ON {
                     intake::capture(app);
                 }
             })
