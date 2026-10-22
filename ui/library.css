@@ -147,10 +147,10 @@ html, html.plain { background: var(--bg-content); }
   position: absolute; inset: 0; background: var(--scrim);
   -webkit-backdrop-filter: blur(28px) saturate(1.5); backdrop-filter: blur(28px) saturate(1.5);
 }
-.pv-bar { position: relative; flex: none; }
+.pv-bar { flex: none; }
 .group { flex: none; display: flex; padding: 2px; border-radius: 16px; }
-.group .icon-btn, .icon-btn.round { width: 28px; height: 28px; border-radius: 14px; color: var(--label); }
-.icon-btn.round { flex: none; width: 32px; height: 32px; border-radius: 16px; }
+.group .icon-btn { width: 28px; height: 28px; border-radius: 14px; color: var(--label); }
+.icon-btn.round { width: 32px; height: 32px; border-radius: 16px; color: var(--label); }
 .icon-btn.del:hover { color: var(--red); }
 .confirm { flex: none; display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 6px 0 12px; box-sizing: border-box; border-radius: 16px; }
 .confirm span { font-size: 12px; color: var(--label-2); white-space: nowrap; margin-right: 2px; }
@@ -162,7 +162,7 @@ html, html.plain { background: var(--bg-content); }
 .media > img.full.loaded { opacity: 1; }
 .nav { position: absolute; top: 50%; width: 32px; height: 32px; margin-top: -16px; border-radius: 16px; display: grid; place-items: center; color: var(--label); transition: opacity .15s; }
 .nav .i { width: 16px; height: 16px; }
-.nav:hover { color: var(--label); background: color-mix(in srgb, var(--glass) 70%, var(--label-5)); }
+.nav:hover { background: color-mix(in srgb, var(--glass) 70%, var(--label-5)); }
 #pv-prev { left: 16px; }
 #pv-next { right: 16px; }
 .nav:disabled { opacity: 0; pointer-events: none; }
@@ -199,10 +199,6 @@ html, html.plain { background: var(--bg-content); }
 }
 .big-play .i { width: 22px; height: 22px; margin-left: 3px; }
 .media.playing .big-play, .media.started .big-play { opacity: 0; scale: .8; pointer-events: none; }
-.note {
-  position: absolute; left: 50%; top: 50%; translate: -50% -50%; padding: 6px 12px; border-radius: 14px; white-space: nowrap;
-  font-size: 12px; color: #fff; background: rgba(28,28,30,.55); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
-}
 
 .card { width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; color: var(--label-2); background: var(--bg-content); }
 .card > .i { width: 56px; height: 56px; stroke-width: 1.1; }
