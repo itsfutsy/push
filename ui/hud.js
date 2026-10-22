@@ -12,21 +12,27 @@ let thumb = null;        // local data URL of the shown upload, kept after it fi
 let serverUrl = '';
 let timer = 0;
 
+const openMain = (view) => () => { invoke('show_main', { view }); dismiss(); };
+
 function view() {
   if (shown.kind === 'permission') {
-    return { state: 'permission', title: 'Allow screen recording', sub: 'Click to open System Settings', glyph: 'push' };
+    return { state: 'permission', title: 'Allow screen recording', sub: 'Click to open System Settings', glyph: 'push',
+      click: () => { invoke('open_permission_settings'); dismiss(); } };
   }
   const u = shown.upload;
   if (isActive(u)) {
     // The ring says "uploading"; the title names the file, middle-truncated like Finder.
-    return { state: 'uploading', title: u.fileName, sub: u.status === 'uploading' ? formatProgress(u.sent, u.size) : 'Waiting…' };
+    return { state: 'uploading', title: u.fileName, sub: u.status === 'uploading' ? formatProgress(u.sent, u.size) : 'Waiting…',
+      click: openMain('main') };
   }
-  if (u.status === 'done') return { state: 'done', title: 'Link copied', sub: shortUrl(u.url) };
+  if (u.status === 'done') {
+    return { state: 'done', title: 'Link copied', sub: shortUrl(u.url), click: () => { invoke('open_link', { id: u.id }); dismiss(); } };
+  }
   const title = failureTitle(u.error, serverUrl);
   switch (u.error?.kind) {
-    case 'auth': return { state: 'failed', title, sub: 'Click to open Settings' };
-    case 'unsupported': case 'missing': return { state: 'failed', title, sub: u.error.message };
-    default: return { state: 'failed', title, sub: 'Click to try again' };
+    case 'auth': return { state: 'failed', title, sub: 'Click to open Settings', click: openMain('settings') };
+    case 'unsupported': case 'missing': return { state: 'failed', title, sub: u.error.message, click: dismiss };
+    default: return { state: 'failed', title, sub: 'Click to try again', click: () => invoke('retry_upload', { id: u.id }).catch(dismiss) };
   }
 }
 
@@ -143,31 +149,8 @@ function onProgress({ id, sent, total }) {
   render();
 }
 
-function onClick() {
-  if (!shown) return;
-  if (shown.kind === 'permission') {
-    invoke('open_permission_settings');
-    return dismiss();
-  }
-  const u = shown.upload;
-  if (u.status === 'done') {
-    invoke('open_link', { id: u.id });
-    dismiss();
-  } else if (u.status === 'failed' && u.error?.kind === 'auth') {
-    invoke('show_main', { view: 'settings' });
-    dismiss();
-  } else if (u.status === 'failed' && (u.error?.kind === 'network' || u.error?.kind === 'server')) {
-    invoke('retry_upload', { id: u.id }).catch(() => dismiss());
-  } else if (u.status === 'failed') {
-    dismiss();
-  } else {
-    invoke('show_main', { view: 'main' });
-    dismiss();
-  }
-}
-
 async function init() {
-  $('hud-hit').addEventListener('click', onClick);
+  $('hud-hit').addEventListener('click', () => shown && last.click());
   $('hud-close').addEventListener('click', dismiss);
   await Promise.all([
     listen('hud', show),
