@@ -50,14 +50,16 @@ pub fn launched_hidden(args: &[String], has_tray: bool) -> bool {
     args.iter().any(|a| a == "--capture" || (a == "--autostart" && has_tray))
 }
 
-/// Deletes inbox folders older than `max_age`. The Share extension's copies are removed after
+const INBOX_MAX_AGE: Duration = Duration::from_secs(60 * 60);
+
+/// Deletes inbox folders older than an hour. The Share extension's copies are removed after
 /// they upload or are dismissed; failed rows don't survive a restart, so anything this old is
 /// left over. Newer ones may belong to a share that is launching Push right now.
-pub fn prune_inbox(inbox: &Path, max_age: Duration) {
+pub fn prune_inbox(inbox: &Path) {
     let Ok(entries) = std::fs::read_dir(inbox) else { return };
     for entry in entries.flatten() {
         let Ok(meta) = entry.metadata() else { continue };
-        if !meta.modified().is_ok_and(|t| t.elapsed().is_ok_and(|age| age > max_age)) {
+        if !meta.modified().is_ok_and(|t| t.elapsed().is_ok_and(|age| age > INBOX_MAX_AGE)) {
             continue;
         }
         let removed =

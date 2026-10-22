@@ -19,7 +19,6 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, DragDropEvent, Manager, RunEvent, WindowEvent};
@@ -58,9 +57,6 @@ pub struct Core {
     shown: AtomicBool,
 }
 
-/// Share extension copies older than this are leftovers from failed uploads (see `prune_inbox`).
-const INBOX_MAX_AGE: Duration = Duration::from_secs(60 * 60);
-
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle().clone();
     let paths = app.path();
@@ -75,7 +71,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // Nothing references old captures after a restart (failed items aren't kept).
     let _ = std::fs::remove_dir_all(cache_dir.join("captures"));
     let _ = std::fs::remove_dir_all(cache_dir.join("quicklook"));
-    intake::prune_inbox(&cache_dir.join("inbox"), INBOX_MAX_AGE);
+    intake::prune_inbox(&cache_dir.join("inbox"));
     #[cfg(target_os = "macos")]
     intake::enable_share_extension();
 
