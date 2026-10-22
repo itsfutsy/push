@@ -65,12 +65,6 @@ function onProgress({ id, sent, total }) {
 
 let zone = { state: null };
 
-function currentUpload() {
-  const active = state.uploads.filter(isActive);
-  // The list is newest first and the queue is FIFO, so the oldest queued item goes next.
-  return { active, current: active.find((u) => u.status === 'uploading') ?? active.at(-1) };
-}
-
 const openSettings = { action: 'Open Settings', run: () => showView('settings') };
 
 function zoneView() {
@@ -78,7 +72,9 @@ function zoneView() {
     return { state: 'over', title: 'Release to upload',
       sub: state.dragCount > 1 ? 'The links are copied when they’re done' : 'The link is copied when it’s done' };
   }
-  const { active, current } = currentUpload();
+  const active = state.uploads.filter(isActive);
+  const oldest = active.at(-1);
+  const current = active.find((u) => u.status === 'uploading') ?? oldest;
   if (current) {
     return { state: 'uploading', title: active.length > 1 ? `Uploading ${active.length} files…` : 'Uploading…',
       current, action: 'Cancel', actionLabel: `Cancel uploading ${current.fileName}`, run: () => invoke('cancel_upload', { id: current.id }) };
@@ -446,7 +442,8 @@ async function showView(next) {
   if (next === state.view) return;
   if (state.view === 'settings') {
     if (recording) await stopRecording();
-    if (!(await commitFields())) return; // keep Settings open to show what's wrong
+    const saved = await Promise.all([commitUrl(), commitToken()]);
+    if (!saved.every(Boolean)) return; // keep Settings open to show what's wrong
   }
   closeConfirm();
   const from = $(state.view), to = $(next);
@@ -533,11 +530,6 @@ async function commitToken() {
     setFieldError('token', String(e));
     return false;
   }
-}
-
-async function commitFields() {
-  const [a, b] = await Promise.all([commitUrl(), commitToken()]);
-  return a && b;
 }
 
 let checkSeq = 0;
@@ -635,9 +627,8 @@ function onRecorderKey(e) {
 }
 
 async function saveShortcut(accelerator) {
-  const wasRecording = recording;
   saving = true;
-  if (wasRecording) await invoke('pause_shortcut', { paused: false }).catch(() => {});
+  if (recording) await invoke('pause_shortcut', { paused: false }).catch(() => {});
   try {
     state.info.settings = await invoke('set_shortcut', { accelerator });
     recording = false;
