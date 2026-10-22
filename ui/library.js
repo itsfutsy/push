@@ -568,8 +568,9 @@ function pvMeta(u) {
 function tileImage(t) {
   const el = t.el.querySelector('.cover.loaded, .doc-art img');
   if (!el) return null;
-  const [w, hgt] = el.tagName === 'VIDEO' ? [el.videoWidth, el.videoHeight] : [el.naturalWidth, el.naturalHeight];
-  return w && hgt ? { el, src: el.currentSrc, size: [w, hgt], remote: el.tagName === 'VIDEO' || !!el.dataset.remote } : null;
+  const video = el.tagName === 'VIDEO';
+  const [w, hgt] = video ? [el.videoWidth, el.videoHeight] : [el.naturalWidth, el.naturalHeight];
+  return w && hgt ? { size: [w, hgt], src: video ? null : el.currentSrc, remote: video || !!el.dataset.remote } : null;
 }
 
 function buildMedia(t) {
@@ -579,6 +580,7 @@ function buildMedia(t) {
   box.className = 'media';
   box.replaceChildren();
   const shown = tileImage(t);
+  const src = shown?.src ?? previewUrl(u.id);
   // A preview at core's full size stands in for a bigger picture that replaces it, so until then it may be
   // scaled up; anything else isn't.
   const replaced = inline(u) && (u.kind === 'image' || u.kind === 'video');
@@ -586,7 +588,7 @@ function buildMedia(t) {
   setSize(shown?.size ?? [4, 3], shown ? capFor(...shown.size, shown.remote) : Infinity);
 
   if (u.kind === 'audio') return audioCard(u, box);
-  if (u.kind === 'video' && inline(u)) return videoPlayer(u, box, shown);
+  if (u.kind === 'video' && inline(u)) return videoPlayer(u, box, src);
 
   const img = h('img', { alt: '', draggable: 'false' });
   img.addEventListener('load', () => {
@@ -598,7 +600,7 @@ function buildMedia(t) {
     else fileCard(u, box);
   });
   if (shown?.remote) img.dataset.remote = '1';
-  img.src = shown && shown.el.tagName !== 'VIDEO' ? shown.src : previewUrl(u.id);
+  img.src = src;
   box.append(img);
 
   // The full image replaces the preview once it has loaded.
@@ -630,9 +632,8 @@ function audioCard(u, box) {
   card.append(el, player(u, el, box, [...bars.children]));
 }
 
-function videoPlayer(u, box, shown) {
+function videoPlayer(u, box, poster) {
   const v = h('video', { playsinline: true, preload: 'metadata' });
-  const poster = shown && shown.el.tagName !== 'VIDEO' ? shown.src : previewUrl(u.id);
   v.poster = poster;
   v.addEventListener('loadedmetadata', () => {
     if (pv.id === u.id && v.videoWidth) setSize([v.videoWidth, v.videoHeight], 1, true);
