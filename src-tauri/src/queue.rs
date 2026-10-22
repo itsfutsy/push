@@ -609,7 +609,7 @@ pub fn link(app: &AppHandle, id: &str) -> Result<String, String> {
     let core = app.state::<Core>();
     let uploads = core.uploads.lock().unwrap();
     let item = uploads.get(id).ok_or(GONE)?;
-    if item.upload.status != Status::Done || !is_web_url(&item.upload.url) {
+    if item.upload.status != Status::Done {
         return Err("This upload isn’t finished yet.".into());
     }
     Ok(item.upload.url.clone())

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use crate::model::{Settings, Status, Upload};
+use crate::net::is_web_url;
 
 /// Most finished uploads kept in the list and in uploads.json.
 pub const MAX_DONE: usize = 500;
@@ -64,7 +65,7 @@ pub fn load_uploads(path: &Path) -> Vec<Upload> {
         eprintln!("push: ignoring unreadable {}: {e}", path.display());
         Vec::new()
     });
-    uploads.retain(|u| u.status == Status::Done && !u.url.is_empty());
+    uploads.retain(|u| u.status == Status::Done && is_web_url(&u.url));
     uploads.truncate(MAX_DONE);
     uploads
 }
