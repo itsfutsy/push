@@ -5,7 +5,7 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
 
-use crate::model::{AppInfo, Connection, ConnectionStatus, HudPayload, PLATFORM, Settings, View};
+use crate::model::{AppInfo, Connection, ConnectionStatus, HudPayload, Settings, View};
 use crate::net::{Api, validate_server_url};
 use crate::{Core, capture, intake, queue, shortcut, store, tray, windows};
 
@@ -34,7 +34,7 @@ pub async fn get_info(app: AppHandle) -> Result<AppInfo> {
     Ok(AppInfo {
         settings,
         has_token,
-        platform: PLATFORM,
+        platform: std::env::consts::OS,
         shortcut_supported: capture::shortcut_supported(),
         version: app.package_info().version.to_string(),
         uploads,

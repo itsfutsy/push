@@ -6,9 +6,6 @@ use rand::RngExt;
 use rand::distr::Alphanumeric;
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_SERVER: &str = "";
-pub const DEFAULT_SHORTCUT: &str = "CommandOrControl+Shift+Digit2";
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
@@ -79,8 +76,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            server_url: DEFAULT_SERVER.into(),
-            shortcut: Some(DEFAULT_SHORTCUT.into()),
+            server_url: String::new(),
+            shortcut: Some("CommandOrControl+Shift+Digit2".into()),
             launch_at_login: false,
         }
     }
@@ -139,14 +136,6 @@ pub struct Progress {
     pub sent: u64,
     pub total: u64,
 }
-
-pub const PLATFORM: &str = if cfg!(target_os = "macos") {
-    "macos"
-} else if cfg!(windows) {
-    "windows"
-} else {
-    "linux"
-};
 
 /// 10 base62 characters from the thread-local CSPRNG (seeded from the OS).
 pub fn new_id() -> String {
