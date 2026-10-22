@@ -318,9 +318,9 @@ fn emit_uploads(app: &AppHandle) {
 
 fn persist(app: &AppHandle) {
     let core = app.state::<Core>();
-    let _guard = core.persist.lock().unwrap();
+    let path = core.uploads_path.lock().unwrap();
     let done = core.uploads.lock().unwrap().done();
-    if let Err(e) = store::save_uploads(&core.uploads_path, &done) {
+    if let Err(e) = store::save_uploads(&path, &done) {
         eprintln!("push: couldn’t save uploads.json: {e}");
     }
 }

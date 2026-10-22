@@ -30,7 +30,7 @@ use crate::model::{HudPayload, Settings};
 pub struct Core {
     http: reqwest::Client,
     settings_path: PathBuf,
-    uploads_path: PathBuf,
+    uploads_path: Mutex<PathBuf>,
     /// Library previews (see `preview`).
     previews_dir: PathBuf,
     cache_dir: PathBuf,
@@ -39,8 +39,6 @@ pub struct Core {
     uploads: Mutex<queue::Uploads>,
     /// Ids for the upload worker, in order.
     jobs: mpsc::UnboundedSender<String>,
-    /// Serialises uploads.json writes.
-    persist: Mutex<()>,
     /// What the HUD shows (or will show once its page loads); `None` when hidden.
     hud: Mutex<Option<HudPayload>>,
     tray: Option<tray::Items>,
@@ -87,14 +85,13 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(Core {
         http: net::client(),
         settings_path,
-        uploads_path,
+        uploads_path: Mutex::new(uploads_path),
         previews_dir,
         cache_dir,
         settings: Mutex::new(settings),
         token: store::Token::new(config_dir),
         uploads: Mutex::new(uploads),
         jobs,
-        persist: Mutex::new(()),
         hud: Mutex::new(None),
         tray,
         has_tray,
