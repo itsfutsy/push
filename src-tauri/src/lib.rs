@@ -62,7 +62,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let settings_path = config_dir.join("settings.json");
     let uploads_path = data_dir.join("uploads.json");
     let previews_dir = data_dir.join("previews");
-    let settings = store::load_settings(&settings_path);
+    let settings: Settings = store::load(&settings_path);
     let done = store::load_uploads(&uploads_path);
     preview::prune(&previews_dir, &done.iter().map(|u| u.id.clone()).collect::<HashSet<_>>());
     let uploads = queue::Uploads::from_done(done);

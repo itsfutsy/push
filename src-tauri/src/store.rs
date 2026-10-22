@@ -5,6 +5,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use serde::de::DeserializeOwned;
+
 use crate::model::{Settings, Status, Upload};
 use crate::net::is_web_url;
 
@@ -44,14 +46,13 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     fs::rename(&tmp, path)
 }
 
-pub fn load_settings(path: &Path) -> Settings {
-    match fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-            eprintln!("push: ignoring unreadable {}: {e}", path.display());
-            Settings::default()
-        }),
-        Err(_) => Settings::default(),
-    }
+/// The JSON in `path`, or the default when it is missing or unreadable.
+pub fn load<T: DeserializeOwned + Default>(path: &Path) -> T {
+    let Ok(bytes) = fs::read(path) else { return T::default() };
+    serde_json::from_slice(&bytes).unwrap_or_else(|e| {
+        eprintln!("push: ignoring unreadable {}: {e}", path.display());
+        T::default()
+    })
 }
 
 pub fn save_settings(path: &Path, settings: &Settings) -> std::io::Result<()> {
@@ -60,11 +61,7 @@ pub fn save_settings(path: &Path, settings: &Settings) -> std::io::Result<()> {
 
 /// Finished uploads, newest first.
 pub fn load_uploads(path: &Path) -> Vec<Upload> {
-    let Ok(bytes) = fs::read(path) else { return Vec::new() };
-    let mut uploads: Vec<Upload> = serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-        eprintln!("push: ignoring unreadable {}: {e}", path.display());
-        Vec::new()
-    });
+    let mut uploads: Vec<Upload> = load(path);
     uploads.retain(|u| u.status == Status::Done && is_web_url(&u.url));
     uploads.truncate(MAX_DONE);
     uploads
