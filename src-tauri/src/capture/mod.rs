@@ -41,6 +41,13 @@ pub async fn capture_region(dir: &Path) -> Shot {
     shot
 }
 
+/// A Wayland session, including one where Push was started under XWayland without
+/// WAYLAND_DISPLAY.
+pub fn wayland() -> bool {
+    std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland")
+}
+
 /// Creates `dir` (owner-only: captures can contain anything on screen; on Windows the per-user
 /// cache folder already is) and returns a fresh PNG path in it.
 async fn new_capture_path(dir: &Path) -> std::io::Result<PathBuf> {

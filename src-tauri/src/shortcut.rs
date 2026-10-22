@@ -5,11 +5,11 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, Short
 
 #[cfg(target_os = "macos")]
 use crate::command_keys;
-use crate::{Core, intake};
+use crate::{Core, capture, intake};
 
 /// Global shortcuts go through X11; on Wayland they register fine and then never fire.
 pub fn supported() -> bool {
-    !cfg!(target_os = "linux") || std::env::var_os("WAYLAND_DISPLAY").is_none()
+    !cfg!(target_os = "linux") || !capture::wayland()
 }
 
 #[derive(Clone, Copy)]

@@ -34,8 +34,7 @@ pub(super) async fn capture(out: &Path) -> Shot {
 fn backend() -> Backend {
     // A colon-separated list such as "ubuntu:GNOME".
     let desktop = env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-    let wayland = env::var_os("WAYLAND_DISPLAY").is_some()
-        || env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland");
+    let wayland = super::wayland();
     let is = |name: &str| desktop.split(':').any(|d| d.eq_ignore_ascii_case(name));
     let (gnome, kde) = (is("GNOME"), is("KDE"));
     if kde && on_path("spectacle") {
