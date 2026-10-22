@@ -96,8 +96,7 @@ impl Token {
         let token = tauri::async_runtime::spawn_blocking(move || load_token(&dir))
             .await
             .map_err(|e| e.to_string())??;
-        *self.cache.lock().unwrap() = Some(token.clone());
-        Ok(token)
+        Ok(self.cache.lock().unwrap().get_or_insert(token).clone())
     }
 
     pub async fn has(&self) -> bool {
