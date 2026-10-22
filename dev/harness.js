@@ -32,7 +32,7 @@ frame.addEventListener('load', async () => {
   if (scenario.hover) forcePseudo(doc, ':hover', scenario.hover);
   if (scenario.focus) forcePseudo(doc, ':focus-visible', scenario.focus);
   await scenario.act?.(doc, mock);
-  else await sleep(page === 'hud' ? 650 : 550);
+  await sleep(page === 'hud' ? 650 : 550);
   root.dataset.ready = '1';
 });
 
