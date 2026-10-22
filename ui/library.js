@@ -496,7 +496,6 @@ const pv = {
   id: null,
   size: [4, 3], // the content's natural size
   cap: Infinity, // how far it may be scaled up (1: not past its natural size)
-  stop: null,    // stops the player's animation frame loop
   copyTimer: 0,
 };
 
@@ -663,7 +662,7 @@ function player(u, el, box, bars) {
     now.textContent = clock(el.currentTime);
     bars?.forEach((b, i) => b.classList.toggle('played', (i + 0.5) / bars.length <= f));
   };
-  const loop = () => { update(); frame = requestAnimationFrame(loop); };
+  const loop = () => { if (el.paused) return; update(); frame = requestAnimationFrame(loop); };
   const setIcon = (name, label) => {
     btn.querySelector('use').setAttribute('href', `#i-${name}`);
     btn.setAttribute('aria-label', label);
@@ -693,15 +692,12 @@ function player(u, el, box, bars) {
   };
   track.addEventListener('pointerdown', (e) => { track.setPointerCapture(e.pointerId); seek(e); });
   track.addEventListener('pointermove', (e) => { if (track.hasPointerCapture(e.pointerId)) seek(e); });
-  pv.stop = () => cancelAnimationFrame(frame);
   const bar = h('div', { class: 'controls' }, btn, now, track, total);
   bar.toggle = toggle;
   return bar;
 }
 
 function stopMedia() {
-  pv.stop?.();
-  pv.stop = null;
   for (const m of $('pv-media').querySelectorAll('video, audio')) {
     m.pause();
     m.removeAttribute('src');
