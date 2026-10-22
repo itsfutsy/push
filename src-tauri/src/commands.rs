@@ -16,9 +16,11 @@ fn update_settings(app: &AppHandle, change: impl FnOnce(&mut Settings)) -> Resul
     let core = app.state::<Core>();
     let settings = {
         let mut settings = core.settings.lock().unwrap();
-        change(&mut settings);
-        store::save_settings(&core.settings_path, &settings).map_err(|_| "Couldn’t save the settings.")?;
-        settings.clone()
+        let mut next = settings.clone();
+        change(&mut next);
+        store::save_settings(&core.settings_path, &next).map_err(|_| "Couldn’t save the settings.")?;
+        *settings = next.clone();
+        next
     };
     tray::refresh(app);
     let _ = app.emit("settings", &settings);
