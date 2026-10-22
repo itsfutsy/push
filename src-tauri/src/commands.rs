@@ -79,9 +79,7 @@ pub async fn test_connection(app: AppHandle) -> Connection {
 pub async fn set_shortcut(app: AppHandle, accelerator: Option<String>) -> Result<Settings> {
     let accelerator = accelerator.map(|a| a.trim().to_owned()).filter(|a| !a.is_empty());
     let next = accelerator.as_deref().map(shortcut::parse).transpose()?;
-    if shortcut::supported() {
-        shortcut::replace(&app, next)?;
-    }
+    shortcut::replace(&app, next)?;
     update_settings(&app, |s| s.shortcut = accelerator)
 }
 
