@@ -29,9 +29,9 @@ const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 /// they can complete the file on the server well after the first delete.
 const DISCARD_AGAIN: Duration = Duration::from_secs(60);
 
-pub const GONE: &str = "That upload isn’t there anymore.";
-pub const NO_TOKEN: &str = "Add your upload token in Settings.";
-pub const BAD_SERVER: &str = "Check the server URL in Settings.";
+const GONE: &str = "That upload isn’t there anymore.";
+const NO_TOKEN: &str = "Add your upload token in Settings.";
+const BAD_SERVER: &str = "Check the server URL in Settings.";
 const OTHER_SERVER: &str = "This upload is on a different server.";
 
 /// Where a file came from, which decides what to clean up after it uploads.
@@ -311,7 +311,7 @@ async fn prepare(source: Source) -> (Upload, PathBuf, Origin) {
     (upload, path, origin)
 }
 
-pub fn emit_uploads(app: &AppHandle) {
+fn emit_uploads(app: &AppHandle) {
     let list = app.state::<Core>().uploads.lock().unwrap().list();
     let _ = app.emit("uploads", list);
 }
