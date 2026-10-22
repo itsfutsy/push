@@ -106,11 +106,3 @@ export const SCENARIOS = {
   'hud-permission': { page: 'hud', hud: () => ({ kind: 'permission' }) },
   'hud-hover': { ...hudUpload((fx) => fx.uploading), hover: '#hud-hit' },
 };
-
-// What dev/shots.sh renders, in light and dark.
-export const SHOTS = [
-  'list', 'list-hover', 'focus', 'empty', 'copied', 'confirm', 'uploading', 'uploading-hover', 'success', 'dragover', 'error',
-  'error-auth', 'noToken', 'firstRun', 'noShortcut', 'settings', 'settings-focus', 'settings-error', 'recording', 'recording-held', 'shortcut-error',
-  'linux', 'wayland', 'library', 'library-hover', 'library-preview', 'library-video', 'library-audio', 'library-confirm',
-  'library-select', 'library-select-confirm', 'library-images', 'library-search', 'library-empty', 'library-linux', 'hud-uploading', 'hud-file', 'hud-done', 'hud-failed', 'hud-auth', 'hud-permission', 'hud-hover',
-];
