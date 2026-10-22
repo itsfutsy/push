@@ -318,9 +318,8 @@ function updateRowText(r, fade = false) {
   }
   let meta;
   if (r.mode === 'done') {
-    if (r.copied) meta = [icon('check', 'ok'), h('span', {}, 'Link copied')];
-    else if (r.error) meta = [icon('circle-alert', 'bad'), h('span', {}, r.error)];
-    else meta = [`${formatSize(u.size)} · ${relativeTime(u.createdAt)}`];
+    meta = r.flash ? [icon(r.flash.icon, r.flash.tone), h('span', {}, r.flash.text)]
+      : [`${formatSize(u.size)} · ${relativeTime(u.createdAt)}`];
   } else if (r.mode === 'active') {
     const uploading = u.status === 'uploading';
     meta = [uploading ? formatProgress(u.sent, u.size) : 'Waiting…'];
@@ -328,7 +327,7 @@ function updateRowText(r, fade = false) {
   } else {
     meta = [icon('circle-alert', 'warn'), h('span', {}, u.error?.message || 'Upload failed')];
   }
-  const key = meta.map((m) => (typeof m === 'string' ? m : m.textContent)).join('|') + r.copied + r.error;
+  const key = meta.map((m) => (typeof m === 'string' ? m : m.textContent)).join('|');
   if (key === r.metaKey) return;
   r.metaKey = key;
   r.meta.replaceChildren(...meta);
@@ -378,21 +377,19 @@ async function copyLink(r) {
   } catch (e) {
     return flashRowError(r, e);
   }
-  clearTimeout(r.timer);
-  r.copied = true;
-  r.error = null;
-  updateRowText(r, true);
-  announce('Link copied');
-  r.timer = setTimeout(() => { r.copied = false; updateRowText(r, true); }, 1500);
+  flash(r, { icon: 'check', tone: 'ok', text: 'Link copied' }, 1500);
 }
 
 function flashRowError(r, e) {
+  flash(r, { icon: 'circle-alert', tone: 'bad', text: String(e) }, 4000);
+}
+
+function flash(r, note, ms) {
   clearTimeout(r.timer);
-  r.copied = false;
-  r.error = String(e);
+  r.flash = note;
   updateRowText(r, true);
-  announce(r.error);
-  r.timer = setTimeout(() => { r.error = null; updateRowText(r, true); }, 4000);
+  announce(note.text);
+  r.timer = setTimeout(() => { r.flash = null; updateRowText(r, true); }, ms);
 }
 
 async function retry(r) {
