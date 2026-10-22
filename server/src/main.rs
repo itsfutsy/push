@@ -11,8 +11,8 @@ use std::{
 
 use axum::{
     Router,
-    body::Body,
-    extract::{Path, Request, State, rejection::PathRejection},
+    body::{Body, HttpBody},
+    extract::{MatchedPath, Path, Request, State, rejection::PathRejection},
     http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -25,7 +25,7 @@ use tower::ServiceExt;
 use tower_http::{
     services::ServeFile,
     set_header::SetResponseHeaderLayer,
-    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
+    trace::{DefaultOnResponse, TraceLayer},
 };
 use tracing::Level;
 
@@ -273,10 +273,18 @@ fn router(app: Arc<App>) -> Router {
         .merge(api)
         .fallback(|| async { not_found() })
         .with_state(app)
-        // One line per request: method, path, status, latency. Headers are never logged.
+        // One line per request: method, route, status, latency. The route (`/i/{name}`), not
+        // the path, so links stay out of the logs and so does any junk a client puts in a URL.
+        // Headers are never logged.
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .make_span_with(|req: &Request| {
+                    let route = req
+                        .extensions()
+                        .get::<MatchedPath>()
+                        .map_or("-", MatchedPath::as_str);
+                    tracing::info_span!("request", method = %req.method(), route)
+                })
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
         // Added after the trace layer, so the Docker healthcheck doesn't log a line every 10 s.
@@ -292,6 +300,20 @@ fn router(app: Arc<App>) -> Router {
             header::CACHE_CONTROL,
             HeaderValue::from_static("no-store"),
         ))
+        .layer(middleware::from_fn(close_after_body))
+}
+
+/// Only uploads read the request body. Anything else answered while a large body is still
+/// arriving (a 401, a 404, a GET) makes hyper reset the connection, and a reverse proxy that
+/// pooled it would then fail the owner's next request on it. Saying "close" stops the reuse.
+async fn close_after_body(req: Request, next: Next) -> Response {
+    let has_body = !req.body().is_end_stream();
+    let mut res = next.run(req).await;
+    if has_body {
+        res.headers_mut()
+            .insert(header::CONNECTION, HeaderValue::from_static("close"));
+    }
+    res
 }
 
 fn not_found() -> Response {

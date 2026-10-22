@@ -142,7 +142,7 @@ docker run --rm -v push_push-data:/data -v "$PWD":/backup alpine tar czf /backup
 Already run nginx, Traefik or Caddy? Run only the Push image and point your proxy at port 3000. For example:
 
 ```sh
-docker run -d --name push --restart unless-stopped -p 127.0.0.1:3000:3000 \
+docker run -d --name push --restart unless-stopped -p 127.0.0.1:3000:3000 --log-driver local \
   -e PUSH_TOKEN=your-token -e PUSH_PUBLIC_URL=https://share.example.com \
   -v push-data:/data ghcr.io/itsfutsy/push:latest
 ```
