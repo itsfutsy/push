@@ -2,7 +2,7 @@
 // this renders state from get_info and the uploads / upload-progress / settings / navigate events.
 import {
   $, h, invoke, listen, onDragDrop, setPlatform, isMac, isWindows, cmdKey, isActive, icon, kindIcon, formatSize, formatProgress, percent,
-  relativeTime, shortUrl, hostOf, formatShortcut, formatModifiers, BOTH_COMMANDS, announce, setRing, fadeIn, motion, reducedMotion, fitMiddle,
+  relativeTime, shortUrl, failureTitle, formatShortcut, formatModifiers, BOTH_COMMANDS, announce, setRing, fadeIn, motion, reducedMotion, fitMiddle,
 } from './lib.js';
 
 const RETRYABLE = new Set(['auth', 'network', 'server']);
@@ -95,20 +95,14 @@ function zoneView() {
 }
 
 function errorView(u) {
-  const host = hostOf(state.info.settings.serverUrl) || 'the server';
+  const title = failureTitle(u.error, state.info.settings.serverUrl);
   const retry = { action: 'Try Again', run: () => invoke('retry_upload', { id: u.id }).catch((e) => { $('zone-sub').textContent = String(e); }) };
   const dismiss = { action: 'OK', run: () => invoke('cancel_upload', { id: u.id }) };
   switch (u.error?.kind) {
-    case 'auth':
-      return { state: 'error', title: 'Upload token not accepted', sub: 'Check the token in Settings.', ...openSettings };
-    case 'network':
-      return { state: 'error', title: `Can’t reach ${host}`, sub: 'Check your connection and try again.', ...retry };
-    case 'unsupported':
-      return { state: 'error', title: 'Can’t upload this item', sub: u.error.message, ...dismiss };
-    case 'missing':
-      return { state: 'error', title: 'File not found', sub: u.error.message, ...dismiss };
-    default:
-      return { state: 'error', title: 'Upload failed', sub: u.error?.message || 'Something went wrong.', ...retry };
+    case 'auth': return { state: 'error', title, sub: 'Check the token in Settings.', ...openSettings };
+    case 'network': return { state: 'error', title, sub: 'Check your connection and try again.', ...retry };
+    case 'unsupported': case 'missing': return { state: 'error', title, sub: u.error.message, ...dismiss };
+    default: return { state: 'error', title, sub: u.error?.message || 'Something went wrong.', ...retry };
   }
 }
 

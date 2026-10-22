@@ -46,9 +46,6 @@ export function fadeIn(el) {
   );
 }
 
-/** The error message core sends when no token is saved yet (queue.rs NO_TOKEN). */
-export const NO_TOKEN = 'Add your upload token in Settings.';
-
 export const $ = (id) => document.getElementById(id);
 
 export function h(tag, attrs = {}, ...children) {
@@ -141,8 +138,21 @@ export function fitMiddle(el, text) {
 }
 
 export const shortUrl = (url) => url.replace(/^https?:\/\//, '');
-export function hostOf(url) {
+function hostOf(url) {
   try { return new URL(url).host; } catch { return ''; }
+}
+
+/** The error message core sends when no token is saved yet (queue.rs NO_TOKEN). */
+const NO_TOKEN = 'Add your upload token in Settings.';
+
+export function failureTitle(error, serverUrl) {
+  switch (error?.kind) {
+    case 'auth': return error.message === NO_TOKEN ? 'Add your upload token' : 'Upload token not accepted';
+    case 'network': return `Can’t reach ${hostOf(serverUrl) || 'the server'}`;
+    case 'unsupported': return 'Can’t upload this item';
+    case 'missing': return 'File not found';
+    default: return 'Upload failed';
+  }
 }
 
 // Accelerators ("CommandOrControl+Shift+Digit2") for display: "⇧⌘2" on macOS (Apple order ⌃⌥⇧⌘),

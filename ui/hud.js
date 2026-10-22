@@ -1,8 +1,8 @@
 // HUD: a small always-on-top panel at the bottom-right of the screen. It owns its lifecycle:
 // success dismisses itself after 3 s (paused while hovered); failures and the permission notice stay.
 import {
-  $, invoke, listen, setPlatform, icon, kindIcon, formatProgress, percent, shortUrl, hostOf, setRing, fadeIn, motion,
-  reducedMotion, announce, fitMiddle, isActive, NO_TOKEN,
+  $, invoke, listen, setPlatform, icon, kindIcon, formatProgress, percent, shortUrl, failureTitle, setRing, fadeIn, motion,
+  reducedMotion, announce, fitMiddle, isActive,
 } from './lib.js';
 
 const root = $('hud');
@@ -22,15 +22,11 @@ function view() {
     return { state: 'uploading', title: u.fileName, sub: u.status === 'uploading' ? formatProgress(u.sent, u.size) : 'Waiting…' };
   }
   if (u.status === 'done') return { state: 'done', title: 'Link copied', sub: shortUrl(u.url) };
+  const title = failureTitle(u.error, serverUrl);
   switch (u.error?.kind) {
-    case 'auth': {
-      const title = u.error.message === NO_TOKEN ? 'Add your upload token' : 'Upload token not accepted';
-      return { state: 'failed', title, sub: 'Click to open Settings' };
-    }
-    case 'network': return { state: 'failed', title: `Can’t reach ${hostOf(serverUrl) || 'the server'}`, sub: 'Click to try again' };
-    case 'unsupported': return { state: 'failed', title: 'Can’t upload this item', sub: u.error.message };
-    case 'missing': return { state: 'failed', title: 'File not found', sub: u.error.message };
-    default: return { state: 'failed', title: 'Upload failed', sub: 'Click to try again' };
+    case 'auth': return { state: 'failed', title, sub: 'Click to open Settings' };
+    case 'unsupported': case 'missing': return { state: 'failed', title, sub: u.error.message };
+    default: return { state: 'failed', title, sub: 'Click to try again' };
   }
 }
 
