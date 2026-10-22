@@ -1,23 +1,9 @@
 // Library window: every finished upload in a grid, newest first and grouped by day, with a Quick Look
 // style preview. All work happens in Rust; this renders the uploads from get_info and the uploads event.
 import {
-  invoke, listen, setPlatform, isMac, icon, kindIcon, formatSize, shortUrl, announce, fadeIn, motion, reducedMotion,
+  $, h, invoke, listen, setPlatform, cmdKey, icon, kindIcon, formatSize, shortUrl, announce, fadeIn, motion, reducedMotion,
   fitMiddle, previewUrl,
 } from './lib.js';
-
-const $ = (id) => document.getElementById(id);
-
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v == null || v === false) continue;
-    if (k === 'class') el.className = v;
-    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? '' : v);
-  }
-  el.append(...children.filter((c) => c != null && c !== false));
-  return el;
-}
 
 // What the server shows in the browser; anything else downloads from its link.
 const INLINE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'mp4', 'm4v', 'mov', 'webm', 'mp3', 'm4a', 'wav', 'ogg', 'txt']);
@@ -301,7 +287,7 @@ function onTileClick(e) {
   if (!id) { select([]); return; }
   if (e.shiftKey && state.anchor) {
     select(range(state.anchor, id), id, { scroll: false, anchor: state.anchor });
-  } else if (isMac() ? e.metaKey : e.ctrlKey) {
+  } else if (cmdKey(e)) {
     const picked = new Set(state.selection);
     if (!picked.delete(id)) picked.add(id);
     select(picked, id, { scroll: false });
@@ -340,7 +326,7 @@ function move(key, extend = false) {
 
 function onKey(e) {
   if (e.isComposing) return;
-  const mod = isMac() ? e.metaKey : e.ctrlKey;
+  const mod = cmdKey(e);
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   const onButton = e.target.closest?.('button') && (key === ' ' || key === 'Enter');
   const copying = mod && key === 'c' && !getSelection().toString();

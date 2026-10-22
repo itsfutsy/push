@@ -14,6 +14,7 @@ let platform = /Windows/.test(navigator.userAgent) ? 'windows' : /Linux|X11/.tes
 let mac = platform === 'macos';
 export const isMac = () => mac;
 export const isWindows = () => platform === 'windows';
+export const cmdKey = (e) => (mac ? e.metaKey : e.ctrlKey);
 export function setPlatform(name) {
   platform = name;
   mac = name === 'macos';
@@ -50,6 +51,20 @@ export function fadeIn(el) {
 /** The error message core sends when no token is saved yet (queue.rs NO_TOKEN). */
 export const NO_TOKEN = 'Add your upload token in Settings.';
 
+export const $ = (id) => document.getElementById(id);
+
+export function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  el.append(...children.filter((c) => c != null && c !== false));
+  return el;
+}
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // A Lucide glyph from the page's sprite (<symbol id="i-name">).
@@ -63,6 +78,7 @@ export function icon(name, cls = '') {
   return svg;
 }
 
+export const isActive = (u) => u.status === 'queued' || u.status === 'uploading';
 export const kindIcon = (kind) => ({ image: 'image', video: 'file-video', audio: 'file-music' })[kind] ?? 'file';
 
 // Sizes in decimal units, like Finder: "812 bytes", "412 KB", "24.8 MB", "1.25 GB".

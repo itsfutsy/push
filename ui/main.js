@@ -1,25 +1,10 @@
 // Main window: drop zone, recent uploads and the settings view. All work happens in Rust;
 // this renders state from get_info and the uploads / upload-progress / settings / navigate events.
 import {
-  invoke, listen, onDragDrop, setPlatform, isMac, isWindows, icon, kindIcon, formatSize, formatProgress, percent,
+  $, h, invoke, listen, onDragDrop, setPlatform, isMac, isWindows, cmdKey, isActive, icon, kindIcon, formatSize, formatProgress, percent,
   relativeTime, shortUrl, hostOf, formatShortcut, formatModifiers, BOTH_COMMANDS, announce, setRing, fadeIn, motion, reducedMotion, fitMiddle,
 } from './lib.js';
 
-const $ = (id) => document.getElementById(id);
-
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v == null || v === false) continue;
-    if (k === 'class') el.className = v;
-    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? '' : v);
-  }
-  el.append(...children.filter((c) => c != null && c !== false));
-  return el;
-}
-
-const isActive = (u) => u.status === 'queued' || u.status === 'uploading';
 const RETRYABLE = new Set(['auth', 'network', 'server']);
 
 const state = {
@@ -693,7 +678,7 @@ async function toggleLogin() {
 // ---------------------------------------------------------------- input
 
 function onKey(e) {
-  const mod = isMac() ? e.metaKey : e.ctrlKey;
+  const mod = cmdKey(e);
   if (mod && e.key === ',') { e.preventDefault(); showView('settings'); return; }
   if (state.view === 'main') {
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); invoke('pick_files'); }

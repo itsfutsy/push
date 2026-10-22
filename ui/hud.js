@@ -1,19 +1,16 @@
 // HUD: a small always-on-top panel at the bottom-right of the screen. It owns its lifecycle:
 // success dismisses itself after 3 s (paused while hovered); failures and the permission notice stay.
 import {
-  invoke, listen, setPlatform, icon, kindIcon, formatProgress, percent, shortUrl, hostOf, setRing, fadeIn, motion,
-  reducedMotion, announce, fitMiddle, NO_TOKEN,
+  $, invoke, listen, setPlatform, icon, kindIcon, formatProgress, percent, shortUrl, hostOf, setRing, fadeIn, motion,
+  reducedMotion, announce, fitMiddle, isActive, NO_TOKEN,
 } from './lib.js';
 
-const $ = (id) => document.getElementById(id);
 const root = $('hud');
 
 let shown = null;        // { kind: 'upload', upload } | { kind: 'permission' } while visible
 let thumb = null;        // local data URL of the shown upload, kept after it finishes
 let serverUrl = '';
 let timer = 0;
-
-const isActive = (u) => u.status === 'queued' || u.status === 'uploading';
 
 function view() {
   if (shown.kind === 'permission') {
