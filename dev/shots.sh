@@ -32,7 +32,7 @@ for s in "$@"; do
     *) size="460 600" ;;
   esac
   for mode in light dark; do
-    log=$("$SNAP" "http://127.0.0.1:$PORT/dev/?s=$s&shot" "$OUT/$s-$mode.png" $size $mode 2 2>&1) || status=1
+    log=$("$SNAP" "http://127.0.0.1:$PORT/dev/?s=$s&shot" "$OUT/$s-$mode.png" $size $mode 2>&1) || status=1
     echo "$log" | grep -v '^wrote' | sed "s/^/$s-$mode: /" || true
   done
 done
