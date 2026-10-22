@@ -500,9 +500,7 @@ pub fn cancel(app: &AppHandle, id: &str) -> Result<(), String> {
             Some(_) => {}
         }
         let item = uploads.remove(id).expect("item exists");
-        if uploads.current.as_ref().is_some_and(|(current, _)| current == id)
-            && let Some((_, cancel)) = uploads.current.take()
-        {
+        if let Some((_, cancel)) = uploads.current.take_if(|(current, _)| current == id) {
             let _ = cancel.send(());
         }
         let on_server = item.may_be_on_server().then(|| item.upload.name.clone());
