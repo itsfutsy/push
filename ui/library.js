@@ -138,7 +138,7 @@ function tileFor(u, animate) {
 function cover(t) {
   const { u } = t;
   const img = h('img', { class: 'cover', alt: '', loading: 'lazy', decoding: 'async', draggable: 'false' });
-  img.addEventListener('load', () => { img.classList.add('loaded'); t.el.classList.add('shown'); });
+  img.addEventListener('load', () => img.classList.add('loaded'));
   img.addEventListener('error', () => {
     if (u.kind === 'image' && inline(u) && !img.dataset.remote) { img.dataset.remote = '1'; img.src = u.url; }
     else if (u.kind === 'video' && inline(u)) img.replaceWith(firstFrame(t));
@@ -153,14 +153,13 @@ function firstFrame(t) {
   const v = h('video', { class: 'cover', muted: true, playsinline: true, preload: 'metadata', 'aria-hidden': 'true' });
   v.muted = true;
   v.addEventListener('loadedmetadata', () => setDuration(u.id, v.duration));
-  v.addEventListener('loadeddata', () => { v.classList.add('loaded'); t.el.classList.add('shown'); });
+  v.addEventListener('loadeddata', () => v.classList.add('loaded'));
   v.addEventListener('error', () => toDoc(t));
   v.src = `${u.url}#t=0.1`;
   return v;
 }
 
 function toDoc(t) {
-  t.el.classList.remove('shown');
   t.badge = null;
   t.el.replaceChildren(doc(t), t.act);
 }
@@ -381,7 +380,6 @@ function selectAll() {
 function onSearch() {
   const input = $('search');
   state.query = input.value.trim();
-  input.closest('.search').classList.toggle('filled', !!input.value);
   render();
 }
 
@@ -511,7 +509,6 @@ function openPreview(id) {
   pv.id = id;
   $('preview').hidden = false;
   $('bar').inert = grid.inert = true;
-  $('bar').classList.add('behind');
   renderBar();
   showItem(t);
   $('preview').focus({ preventScroll: true });
@@ -525,7 +522,6 @@ function closePreview() {
   stopMedia();
   closeConfirm();
   $('bar').inert = grid.inert = false;
-  $('bar').classList.remove('behind');
   renderBar();
   grid.focus({ preventScroll: true });
   t?.el.scrollIntoView({ block: 'nearest' });
@@ -553,10 +549,8 @@ function showItem(t, fade = false) {
   clearTimeout(pv.copyTimer);
   $('pv-copy').replaceChildren('Copy Link');
   const i = state.order.indexOf(u.id);
-  for (const [b, off] of [[$('pv-prev'), i <= 0], [$('pv-next'), i >= state.order.length - 1]]) {
-    b.disabled = off;
-    b.classList.toggle('off', off);
-  }
+  $('pv-prev').disabled = i <= 0;
+  $('pv-next').disabled = i >= state.order.length - 1;
   buildMedia(t);
   if (fade) fadeIn($('pv-media'));
 }
