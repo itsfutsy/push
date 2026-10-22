@@ -14,7 +14,7 @@ use crate::intake;
 /// The saved setting for this shortcut. Not a real accelerator: `shortcut::parse` special-cases it.
 pub const ACCELERATOR: &str = "LeftCommand+RightCommand";
 /// macOS only applies an Input Monitoring grant to a new process.
-pub const NO_PERMISSION: &str =
+const NO_PERMISSION: &str =
     "Allow Push in System Settings > Privacy & Security > Input Monitoring, then quit and reopen Push and record it again.";
 const UNAVAILABLE: &str = "Couldn’t watch the Command keys. Quit and reopen Push, then try again.";
 
@@ -118,7 +118,7 @@ extern "C" fn on_event(_proxy: Ref, kind: u32, event: Ref, _info: Ref) -> Ref {
         FLAGS_CHANGED => {
             // SAFETY: `event` is the live flags-changed event this callback was handed.
             let flags = unsafe { CGEventGetFlags(event) };
-            if pressed(flags, &HELD)
+            if pressed(flags)
                 && ARMED.load(Ordering::SeqCst)
                 && let Some(app) = APP.get()
             {
@@ -131,11 +131,11 @@ extern "C" fn on_event(_proxy: Ref, kind: u32, event: Ref, _info: Ref) -> Ref {
 }
 
 /// True when this change brings both Command keys down with no Shift, Control or Option.
-/// `held` remembers they are down, so holding them fires once.
-fn pressed(flags: u64, held: &AtomicBool) -> bool {
+/// `HELD` remembers they are down, so holding them fires once.
+fn pressed(flags: u64) -> bool {
     if flags & BOTH_COMMANDS != BOTH_COMMANDS {
-        held.store(false, Ordering::SeqCst);
+        HELD.store(false, Ordering::SeqCst);
         return false;
     }
-    !held.swap(true, Ordering::SeqCst) && flags & OTHER_MODIFIERS == 0
+    !HELD.swap(true, Ordering::SeqCst) && flags & OTHER_MODIFIERS == 0
 }

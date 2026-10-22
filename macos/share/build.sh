@@ -17,7 +17,7 @@ fi
 HERE="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "$HERE/../.." && pwd)"
 IDENTITY="${PUSH_SIGN_IDENTITY:-Developer ID Application: Abram Industries Pty ltd (4TZBGP972A)}"
-CONF="$ROOT/src-tauri/tauri.conf.json"
+CARGO_TOML="$ROOT/src-tauri/Cargo.toml"
 ICON="$ROOT/src-tauri/icons/icon.icns"
 OUT="$HERE/build"
 STAGE="$OUT/stage"
@@ -25,9 +25,9 @@ APPEX="$STAGE/PushShare.appex"
 
 fail() { echo "PushShare: $*" >&2; exit 1; }
 
-# Version from tauri.conf.json when it has a plain x.y.z one (plutil reads JSON too).
+# Version from the app's Cargo.toml when it has a plain x.y.z one.
 VERSION=1.0.0
-if [[ -f "$CONF" ]] && v="$(plutil -extract version raw -o - "$CONF" 2>/dev/null)" \
+if [[ -f "$CARGO_TOML" ]] && v="$(sed -n '/^version = "/{s/^version = "\([^"]*\)".*/\1/p;q;}' "$CARGO_TOML")" \
   && [[ "$v" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
   VERSION="$v"
 fi

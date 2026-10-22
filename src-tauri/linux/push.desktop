@@ -1,17 +1,11 @@
 [Desktop Entry]
 Type=Application
 Name={{name}}
-{{#if comment}}
 Comment={{comment}}
-{{/if}}
 Exec={{exec}} %F
 Icon={{icon}}
 Terminal=false
-{{#if categories}}
 Categories={{categories}}
-{{else}}
-Categories=Utility;
-{{/if}}
 StartupWMClass={{exec}}
 # No MimeType on purpose: any claimed type can make Push the default opener on Linux,
 # and opening a file uploads it. Files reach Push by drag and drop, the picker, or `push FILE`.

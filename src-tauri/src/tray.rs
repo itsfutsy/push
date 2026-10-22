@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager, Wry};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::model::View;
-use crate::{Core, capture, intake, windows};
+use crate::{Core, intake, shortcut, windows};
 
 /// The items whose state follows the app.
 pub struct Items {
@@ -103,7 +103,7 @@ pub fn refresh(app: &AppHandle) {
     let core = app.state::<Core>();
     let Some(items) = &core.tray else { return };
     let has_done = core.uploads.lock().unwrap().has_done();
-    let shortcut = core.settings.lock().unwrap().shortcut.clone().filter(|_| capture::shortcut_supported());
+    let shortcut = core.settings.lock().unwrap().shortcut.clone().filter(|_| shortcut::supported());
     let _ = items.copy_last.set_enabled(has_done);
     if items.capture.set_accelerator(shortcut.as_deref()).is_err() {
         let _ = items.capture.set_accelerator(None::<&str>);

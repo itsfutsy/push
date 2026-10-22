@@ -19,7 +19,6 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, DragDropEvent, Manager, RunEvent, WindowEvent};
@@ -31,7 +30,7 @@ use crate::model::{HudPayload, Settings};
 pub struct Core {
     http: reqwest::Client,
     settings_path: PathBuf,
-    uploads_path: PathBuf,
+    uploads_path: Mutex<PathBuf>,
     /// Library previews (see `preview`).
     previews_dir: PathBuf,
     cache_dir: PathBuf,
@@ -40,26 +39,18 @@ pub struct Core {
     uploads: Mutex<queue::Uploads>,
     /// Ids for the upload worker, in order.
     jobs: mpsc::UnboundedSender<String>,
-    /// Serialises uploads.json writes.
-    persist: Mutex<()>,
     /// What the HUD shows (or will show once its page loads); `None` when hidden.
     hud: Mutex<Option<HudPayload>>,
     tray: Option<tray::Items>,
-    /// The tray icon is there and visible. Without it the main window is the only way in, so
-    /// it shows at a login launch and closing it quits.
-    has_tray: bool,
+    tray_visible: bool,
     /// The registered capture shortcut, if any.
     shortcut: Mutex<Option<shortcut::Hotkey>>,
     /// An interactive capture is on screen (the HUD stays hidden meanwhile).
     capturing: AtomicBool,
     /// Launched as a login item (or for a capture): don't show the main window by itself.
     launched_hidden: bool,
-    /// The main window has been shown once at launch.
-    shown: AtomicBool,
+    main_loaded: AtomicBool,
 }
-
-/// Share extension copies older than this are leftovers from failed uploads (see `prune_inbox`).
-const INBOX_MAX_AGE: Duration = Duration::from_secs(60 * 60);
 
 fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle().clone();
@@ -68,20 +59,20 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let settings_path = config_dir.join("settings.json");
     let uploads_path = data_dir.join("uploads.json");
     let previews_dir = data_dir.join("previews");
-    let settings = store::load_settings(&settings_path);
+    let settings: Settings = store::load(&settings_path);
     let done = store::load_uploads(&uploads_path);
     preview::prune(&previews_dir, &done.iter().map(|u| u.id.clone()).collect::<HashSet<_>>());
     let uploads = queue::Uploads::from_done(done);
     // Nothing references old captures after a restart (failed items aren't kept).
     let _ = std::fs::remove_dir_all(cache_dir.join("captures"));
     let _ = std::fs::remove_dir_all(cache_dir.join("quicklook"));
-    intake::prune_inbox(&cache_dir.join("inbox"), INBOX_MAX_AGE);
+    intake::prune_inbox(&cache_dir.join("inbox"));
     #[cfg(target_os = "macos")]
     intake::enable_share_extension();
 
     let tray = tray::build(&handle).inspect_err(|e| eprintln!("push: no tray icon: {e}")).ok();
-    let has_tray = tray.is_some() && tray::host_present();
-    if tray.is_some() && !has_tray {
+    let tray_visible = tray.is_some() && tray::host_present();
+    if tray.is_some() && !tray_visible {
         eprintln!("push: no tray host on this desktop, so the window stays available");
     }
 
@@ -91,21 +82,20 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(Core {
         http: net::client(),
         settings_path,
-        uploads_path,
+        uploads_path: Mutex::new(uploads_path),
         previews_dir,
         cache_dir,
         settings: Mutex::new(settings),
         token: store::Token::new(config_dir),
         uploads: Mutex::new(uploads),
         jobs,
-        persist: Mutex::new(()),
         hud: Mutex::new(None),
         tray,
-        has_tray,
+        tray_visible,
         shortcut: Mutex::new(None),
         capturing: AtomicBool::new(false),
-        launched_hidden: intake::launched_hidden(&args, has_tray),
-        shown: AtomicBool::new(false),
+        launched_hidden: intake::launched_hidden(&args, tray_visible),
+        main_loaded: AtomicBool::new(false),
     });
     tauri::async_runtime::spawn(queue::worker(handle.clone(), queue));
     tray::refresh(&handle);
@@ -128,7 +118,7 @@ fn on_page_load(webview: &tauri::Webview, payload: &tauri::webview::PageLoadPayl
     let app = webview.app_handle().clone();
     let Some(core) = app.try_state::<Core>() else { return };
     match webview.label() {
-        "main" if !core.shown.swap(true, Ordering::SeqCst) => {
+        "main" if !core.main_loaded.swap(true, Ordering::SeqCst) => {
             let hidden = core.launched_hidden;
             tauri::async_runtime::spawn(async move {
                 if !hidden || !app.state::<Core>().token.has().await {
@@ -150,7 +140,7 @@ fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
             api.prevent_close();
             let app = window.app_handle();
             match window.label() {
-                "main" if app.state::<Core>().has_tray => windows::hide_main(app),
+                "main" if app.state::<Core>().tray_visible => windows::hide_main(app),
                 // A hidden window with no tray icon would leave Push running out of reach.
                 "main" => app.exit(0),
                 _ => windows::hide_hud(app),

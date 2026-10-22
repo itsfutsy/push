@@ -102,7 +102,7 @@ function fixtures(now) {
   return { done, more, previews, uploading, queued, failed, pics };
 }
 
-export function createMock({ scenario = {}, log = () => {} } = {}) {
+export function createMock({ scenario, log, onHudDismiss, hovered }) {
   const now = Date.now();
   const fx = fixtures(now);
   const info = {
@@ -115,7 +115,6 @@ export function createMock({ scenario = {}, log = () => {} } = {}) {
   const listeners = new Map();
   let dragHandler = null;
   let hud = scenario.hud?.(fx) ?? null; // what the HUD shows, like core's
-  const hooks = { onHudDismiss: () => {}, hovered: () => false };
 
   // Like core: in flight and failed first, then done; newest first, and the later of a batch first.
   const ORDER = { uploading: 0, queued: 0, failed: 0, done: 1 };
@@ -137,7 +136,7 @@ export function createMock({ scenario = {}, log = () => {} } = {}) {
   // Upload simulation: one at a time, FIFO, progress at ~10 events/s.
   let ticking = null;
   function pump() {
-    if (ticking || scenario.frozen) return;
+    if (ticking) return;
     const next = uploads.find((u) => u.status === 'uploading') ?? sorted().filter((u) => u.status === 'queued').at(-1);
     if (!next) return;
     if (next.status !== 'uploading') { next.status = 'uploading'; emitUploads(); }
@@ -167,7 +166,7 @@ export function createMock({ scenario = {}, log = () => {} } = {}) {
       const id = newId(), ext = extOf(f.name);
       uploads.push({ id, name: `${id}.${ext}`, url: '', fileName: f.name, size: f.size, kind: kindOf(ext), createdAt,
         status: f.size ? 'queued' : 'failed', sent: 0, thumb: f.thumb ?? null, failAt: f.failAt ?? 0,
-        error: f.size ? null : { kind: 'unsupported', message: 'Folders and empty files can’t be uploaded.' } });
+        error: f.size ? null : { kind: 'unsupported', message: 'This file is empty.' } });
     }
     emitUploads();
     pump();
@@ -175,15 +174,11 @@ export function createMock({ scenario = {}, log = () => {} } = {}) {
 
   let pickCount = 0;
   const commands = {
-    get_info() {
-      const snapshot = clone({ ...info, uploads: sorted() });
-      scenario.onInfo?.(mock); // things that happen while the page waits for the answer
-      return snapshot;
-    },
+    get_info: () => clone({ ...info, uploads: sorted() }),
     set_server_url({ url }) {
       url = url.trim().replace(/\/+$/, '');
       if (!/^https:\/\/[^\s/]+$/.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(url)) {
-        throw 'Enter an address that starts with https://';
+        throw 'Enter a URL that starts with https://';
       }
       info.settings.serverUrl = url;
       return info.settings;
@@ -218,7 +213,6 @@ export function createMock({ scenario = {}, log = () => {} } = {}) {
     open_link: ({ id }) => { log('open', find(id)?.url); return null; },
     async delete_upload({ id }) {
       await sleep(450);
-      if (scenario.deleteFails) throw 'Can’t reach the server.';
       uploads = uploads.filter((u) => u.id !== id);
       emitUploads();
       return null;
@@ -235,8 +229,8 @@ export function createMock({ scenario = {}, log = () => {} } = {}) {
     show_main({ view }) { emit('navigate', { view }); return null; },
     show_library: () => { log('show library'); return null; },
     hud_ready: () => hud,
-    hud_dismiss() { hud = null; hooks.onHudDismiss(); return null; },
-    hud_hovered: () => hooks.hovered(),
+    hud_dismiss() { hud = null; onHudDismiss(); return null; },
+    hud_hovered: () => hovered(),
     open_permission_settings: () => null,
   };
 
@@ -266,7 +260,7 @@ export function createMock({ scenario = {}, log = () => {} } = {}) {
   };
 
   const mock = {
-    api, emit, add, complete, pump, hooks, fx, scenario, uploads: () => uploads,
+    api, emit, add, complete, pump, fx, uploads: () => uploads,
     drag(type, paths = []) {
       dragHandler?.({ event: `tauri://drag-${type}`, id: 0, payload: { type, paths, position: { x: 190, y: 120 } } });
     },

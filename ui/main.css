@@ -1,7 +1,5 @@
 /* Main window: 380x520 over the native popover material. The 32pt overlay titlebar holds the
    traffic lights at the left (close button at x 9, y 9); everything aligns to x 12 and y 16. */
-.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
-
 .view { position: absolute; inset: 0; display: flex; flex-direction: column; }
 
 .titlebar { position: relative; flex: none; height: 32px; }

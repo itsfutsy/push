@@ -10,7 +10,13 @@ const shot = q.has('shot');
 const page = scenario.page ?? 'main';
 const linux = scenario.info?.platform === 'linux';
 
-const mock = createMock({ scenario, log: (...a) => q.has('log') && console.debug('[mock]', ...a) });
+const win = document.getElementById('win');
+const mock = createMock({
+  scenario,
+  log: (...a) => q.has('log') && console.debug('[mock]', ...a),
+  onHudDismiss: () => win.classList.add('dismissed'),
+  hovered: () => win.matches(':hover'),
+});
 window.__PUSH_DEV_TAURI__ = mock.api;
 window.mock = mock; // for poking at it from the console
 
@@ -19,10 +25,7 @@ root.classList.toggle('shot', shot);
 root.dataset.page = page;
 root.classList.toggle('linux', linux);
 
-const win = document.getElementById('win');
 const frame = document.getElementById('frame');
-mock.hooks.onHudDismiss = () => win.classList.add('dismissed');
-mock.hooks.hovered = () => win.matches(':hover');
 
 frame.src = `../ui/${{ hud: 'hud', library: 'library' }[page] ?? 'index'}.html`;
 frame.addEventListener('load', async () => {
@@ -32,7 +35,7 @@ frame.addEventListener('load', async () => {
   if (scenario.hover) forcePseudo(doc, ':hover', scenario.hover);
   if (scenario.focus) forcePseudo(doc, ':focus-visible', scenario.focus);
   await scenario.act?.(doc, mock);
-  else await sleep(page === 'hud' ? 650 : 550);
+  await sleep(page === 'hud' ? 650 : 550);
   root.dataset.ready = '1';
 });
 
@@ -112,14 +115,14 @@ function buildBar() {
     button('Drag out', () => mock.drag('leave'));
     button('Drop', () => { mock.drag('drop'); mock.add([{ name: 'Dropped Photo.jpg', size: 3_200_000, thumb: mock.fx.pics.photo }]); });
     button('Resume', () => mock.pump());
-  } else if (page === 'library') {
-    button('Replay', () => location.reload());
-    button('Upload', () => mock.add([{ name: 'Screenshot 2026-10-21 at 14.12.40.png', size: 1_840_000 }]));
+    button('Settings', () => mock.emit('navigate', { view: 'settings' }));
     return;
+  }
+  button('Replay', () => location.reload());
+  if (page === 'library') {
+    button('Upload', () => mock.add([{ name: 'Screenshot 2026-10-21 at 14.12.40.png', size: 1_840_000 }]));
   } else {
-    button('Replay', () => location.reload());
     button('Finish', () => { const u = mock.uploads().find((x) => x.status === 'uploading'); if (u) mock.complete(u.id); });
     button('Progress', () => mock.pump());
   }
-  button('Settings', () => mock.emit('navigate', { view: 'settings' }));
 }

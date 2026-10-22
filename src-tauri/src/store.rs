@@ -5,7 +5,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use serde::de::DeserializeOwned;
+
 use crate::model::{Settings, Status, Upload};
+use crate::net::is_web_url;
 
 /// Most finished uploads kept in the list and in uploads.json.
 pub const MAX_DONE: usize = 500;
@@ -43,14 +46,13 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     fs::rename(&tmp, path)
 }
 
-pub fn load_settings(path: &Path) -> Settings {
-    match fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-            eprintln!("push: ignoring unreadable {}: {e}", path.display());
-            Settings::default()
-        }),
-        Err(_) => Settings::default(),
-    }
+/// The JSON in `path`, or the default when it is missing or unreadable.
+pub fn load<T: DeserializeOwned + Default>(path: &Path) -> T {
+    let Ok(bytes) = fs::read(path) else { return T::default() };
+    serde_json::from_slice(&bytes).unwrap_or_else(|e| {
+        eprintln!("push: ignoring unreadable {}: {e}", path.display());
+        T::default()
+    })
 }
 
 pub fn save_settings(path: &Path, settings: &Settings) -> std::io::Result<()> {
@@ -59,12 +61,8 @@ pub fn save_settings(path: &Path, settings: &Settings) -> std::io::Result<()> {
 
 /// Finished uploads, newest first.
 pub fn load_uploads(path: &Path) -> Vec<Upload> {
-    let Ok(bytes) = fs::read(path) else { return Vec::new() };
-    let mut uploads: Vec<Upload> = serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-        eprintln!("push: ignoring unreadable {}: {e}", path.display());
-        Vec::new()
-    });
-    uploads.retain(|u| u.status == Status::Done && !u.url.is_empty());
+    let mut uploads: Vec<Upload> = load(path);
+    uploads.retain(|u| u.status == Status::Done && is_web_url(&u.url));
     uploads.truncate(MAX_DONE);
     uploads
 }
@@ -98,8 +96,7 @@ impl Token {
         let token = tauri::async_runtime::spawn_blocking(move || load_token(&dir))
             .await
             .map_err(|e| e.to_string())??;
-        *self.cache.lock().unwrap() = Some(token.clone());
-        Ok(token)
+        Ok(self.cache.lock().unwrap().get_or_insert(token).clone())
     }
 
     pub async fn has(&self) -> bool {
@@ -156,18 +153,11 @@ fn save_token(_dir: &Path, token: &str) -> Result<(), String> {
 
 #[cfg(target_os = "linux")]
 fn load_token(dir: &Path) -> Result<Option<String>, String> {
-    match entry().and_then(|e| e.get_password()) {
-        Ok(token) => Ok(Some(token)),
-        Err(e) => {
-            let file = fs::read_to_string(dir.join("token")).ok().map(|t| t.trim().to_owned());
-            keyring_fallback(e, file.filter(|t| !t.is_empty()))
-        }
-    }
-}
-
-/// The token when the keyring couldn't give one, given what the fallback file holds.
-#[cfg(target_os = "linux")]
-fn keyring_fallback(error: keyring::Error, file: Option<String>) -> Result<Option<String>, String> {
+    let error = match entry().and_then(|e| e.get_password()) {
+        Ok(token) => return Ok(Some(token)),
+        Err(e) => e,
+    };
+    let file = fs::read_to_string(dir.join("token")).ok().map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
     match error {
         // No Secret Service, or no entry there: the private file is the only place left.
         keyring::Error::NoEntry | keyring::Error::NoDefaultStore => Ok(file),
@@ -179,8 +169,6 @@ fn keyring_fallback(error: keyring::Error, file: Option<String>) -> Result<Optio
 
 #[cfg(target_os = "linux")]
 fn save_token(dir: &Path, token: &str) -> Result<(), String> {
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
-
     let file = dir.join("token");
     if entry().and_then(|e| e.set_password(token)).is_ok() {
         let _ = fs::remove_file(file);
@@ -188,15 +176,5 @@ fn save_token(dir: &Path, token: &str) -> Result<(), String> {
     }
     // Best effort: an older token left in the keyring would win over the file on the next read.
     let _ = entry().and_then(|e| e.delete_credential());
-    let write = || -> std::io::Result<()> {
-        fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
-        let tmp = dir.join("token.tmp");
-        let _ = fs::remove_file(&tmp);
-        let mut f = fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp)?;
-        f.set_permissions(fs::Permissions::from_mode(0o600))?;
-        f.write_all(token.as_bytes())?;
-        f.sync_all()?;
-        fs::rename(&tmp, &file)
-    };
-    write().map_err(|e| format!("Couldn’t save the token ({e})."))
+    write_atomic(&file, token.as_bytes()).map_err(|e| format!("Couldn’t save the token ({e})."))
 }

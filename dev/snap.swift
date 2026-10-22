@@ -1,5 +1,5 @@
 // Renders a page in a real offscreen WKWebView and writes a PNG. Preview harness only.
-// usage: snap <url-or-file> <out.png> <width> <height> <light|dark> [scale]
+// usage: snap <url> <out.png> <width> <height> <light|dark>
 //   Waits for <html data-ready="1"> (up to 55 s), then snapshots. Console errors, uncaught exceptions and
 //   CSP violations from every frame are printed as "console: ..." lines.
 // build: swiftc -O dev/snap.swift -o /tmp/push-snap
@@ -8,12 +8,12 @@ import WebKit
 
 let args = CommandLine.arguments
 guard args.count >= 6 else {
-  print("usage: snap <url-or-file> <out.png> <width> <height> <light|dark> [scale]"); exit(2)
+  print("usage: snap <url> <out.png> <width> <height> <light|dark>"); exit(2)
 }
 let target = args[1], out = args[2]
 let w = CGFloat(Double(args[3])!), h = CGFloat(Double(args[4])!)
 let dark = args[5] == "dark"
-let scale = args.count > 6 ? CGFloat(Double(args[6])!) : 2
+let scale: CGFloat = 2
 
 // Forward console errors and CSP violations from all frames.
 let probe = """
@@ -103,13 +103,6 @@ snapper.web.appearance = window.appearance
 window.contentView!.addSubview(snapper.web)
 window.orderFrontRegardless()
 
-if target.hasPrefix("http://") || target.hasPrefix("https://") {
-  snapper.web.load(URLRequest(url: URL(string: target)!))
-} else {
-  // Files in the repo get read access to the repo root (this file's grandparent) so ../ui/ resolves.
-  let file = URL(fileURLWithPath: target).standardizedFileURL
-  let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-  snapper.web.loadFileURL(file, allowingReadAccessTo: file.path.hasPrefix(repo.path + "/") ? repo : file.deletingLastPathComponent())
-}
+snapper.web.load(URLRequest(url: URL(string: target)!))
 DispatchQueue.main.asyncAfter(deadline: .now() + 60) { print("timeout"); exit(1) }
 app.run()

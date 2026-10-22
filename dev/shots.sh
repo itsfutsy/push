@@ -1,6 +1,6 @@
 #!/bin/sh
 # Renders every preview scenario in real macOS WebKit, light and dark, to /tmp/push-ui-shots/.
-# usage: [PORT=5174] dev/shots.sh [scenario ...]    (default: SHOTS in dev/scenarios.js)
+# usage: [PORT=5174] dev/shots.sh [scenario ...]    (default: the list below)
 set -eu
 cd "$(dirname "$0")/.."
 OUT=/tmp/push-ui-shots
@@ -17,9 +17,11 @@ if ! curl -sf "http://127.0.0.1:$PORT/dev/index.html" >/dev/null; then
   sleep 0.5
 fi
 
-if [ $# -eq 0 ]; then
-  set -- $(sed -n "/^export const SHOTS/,/];/p" dev/scenarios.js | grep -o "'[^']*'" | tr -d "'")
-fi
+[ $# -gt 0 ] || set -- list list-hover focus empty copied confirm uploading uploading-hover success dragover error \
+  error-auth noToken firstRun noShortcut settings settings-focus settings-error recording recording-held shortcut-error \
+  linux wayland library library-hover library-preview library-video library-audio library-confirm \
+  library-select library-select-confirm library-images library-search library-empty library-linux \
+  hud-uploading hud-file hud-done hud-failed hud-auth hud-permission hud-hover
 
 status=0
 for s in "$@"; do
@@ -30,7 +32,7 @@ for s in "$@"; do
     *) size="460 600" ;;
   esac
   for mode in light dark; do
-    log=$("$SNAP" "http://127.0.0.1:$PORT/dev/?s=$s&shot" "$OUT/$s-$mode.png" $size $mode 2 2>&1) || status=1
+    log=$("$SNAP" "http://127.0.0.1:$PORT/dev/?s=$s&shot" "$OUT/$s-$mode.png" $size $mode 2>&1) || status=1
     echo "$log" | grep -v '^wrote' | sed "s/^/$s-$mode: /" || true
   done
 done

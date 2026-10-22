@@ -13,9 +13,6 @@ unsafe extern "C" {
     safe fn CGRequestScreenCaptureAccess() -> bool;
 }
 
-const SCREEN_RECORDING_PANE: &str =
-    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
-
 pub(super) async fn capture(out: &Path) -> Shot {
     // Without permission screencapture still lets the user drag a region, then writes nothing.
     let allowed = tauri::async_runtime::spawn_blocking(|| {
@@ -35,31 +32,13 @@ pub(super) async fn capture(out: &Path) -> Shot {
         .output()
         .await;
     match result {
-        Ok(o) => outcome(o.status.code(), has_image(out).await, &o.stderr, out),
+        Ok(o) if o.status.success() && has_image(out).await => Shot::Done(out.to_path_buf()),
+        // Exit 0 without a file is a cancel: Esc, or Control held so the shot went to the
+        // clipboard.
+        Ok(o) if o.status.success() => Shot::Cancelled,
+        // macOS 27 reports a missing permission as exit 1, which the preflight check normally
+        // rules out.
+        Ok(o) => Shot::Failed(failure("screencapture", o.status.code(), &o.stderr)),
         Err(e) => Shot::Failed(format!("Couldn’t run screencapture: {e}")),
     }
-}
-
-/// Exit 0 with a file is a shot. Exit 0 without one is a cancel: Esc, or Control held so the shot
-/// went to the clipboard. Anything else is an error (macOS 27 reports a missing permission as
-/// exit 1, which the preflight check normally rules out).
-fn outcome(code: Option<i32>, has_image: bool, stderr: &[u8], out: &Path) -> Shot {
-    match (code, has_image) {
-        (Some(0), true) => Shot::Done(out.to_path_buf()),
-        (Some(0), false) => Shot::Cancelled,
-        _ => Shot::Failed(failure("screencapture", code, stderr)),
-    }
-}
-
-pub(super) fn open_permission_settings() {
-    // On a thread so the caller never waits and the child is reaped.
-    std::thread::spawn(|| {
-        std::process::Command::new("/usr/bin/open")
-            .arg(SCREEN_RECORDING_PANE)
-            .status()
-    });
-}
-
-pub(super) fn shortcut_supported() -> bool {
-    true
 }

@@ -1,23 +1,9 @@
 // Library window: every finished upload in a grid, newest first and grouped by day, with a Quick Look
 // style preview. All work happens in Rust; this renders the uploads from get_info and the uploads event.
 import {
-  invoke, listen, setPlatform, isMac, icon, kindIcon, formatSize, shortUrl, announce, fadeIn, motion, reducedMotion,
+  $, h, invoke, listen, setPlatform, cmdKey, icon, kindIcon, formatSize, shortUrl, announce, fadeIn, motion, reducedMotion,
   fitMiddle, previewUrl,
 } from './lib.js';
-
-const $ = (id) => document.getElementById(id);
-
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v == null || v === false) continue;
-    if (k === 'class') el.className = v;
-    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? '' : v);
-  }
-  el.append(...children.filter((c) => c != null && c !== false));
-  return el;
-}
 
 // What the server shows in the browser; anything else downloads from its link.
 const INLINE = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'mp4', 'm4v', 'mov', 'webm', 'mp3', 'm4a', 'wav', 'ogg', 'txt']);
@@ -48,13 +34,12 @@ function applyUploads(list, initial = false) {
     if (!ids.has(id)) { tiles.delete(id); seen.unobserve(t.el); }
   }
   // The upload being previewed was deleted: move on to its neighbour, the way Quick Look does.
-  const next = pv.id && !ids.has(pv.id)
-    ? state.order.slice(state.order.indexOf(pv.id) + 1).find((id) => ids.has(id))
-      ?? state.order.slice(0, state.order.indexOf(pv.id)).findLast((id) => ids.has(id))
-    : null;
+  const gone = pv.id && !ids.has(pv.id);
+  const i = state.order.indexOf(pv.id);
+  const next = gone && (state.order.slice(i + 1).find((id) => ids.has(id)) ?? state.order.slice(0, i).findLast((id) => ids.has(id)));
   state.uploads = done;
   render(!initial);
-  if (pv.id && !ids.has(pv.id)) {
+  if (gone) {
     if (next) { select([next]); showItem(tiles.get(next), true); } else closePreview();
   }
 }
@@ -103,10 +88,7 @@ function render(animate = false) {
   // Tiles that are no longer shown aren't selected.
   const ids = new Set(state.order);
   const keep = (id) => (ids.has(id) ? id : null);
-  if (![...state.selection, state.current].every((id) => !id || ids.has(id))) {
-    select([...state.selection].filter(keep), keep(state.current), { scroll: false, anchor: keep(state.anchor) });
-  }
-  renderBar();
+  select([...state.selection].filter(keep), keep(state.current), { scroll: false, anchor: keep(state.anchor) });
 }
 
 function renderEmpty(empty) {
@@ -152,7 +134,7 @@ function tileFor(u, animate) {
 function cover(t) {
   const { u } = t;
   const img = h('img', { class: 'cover', alt: '', loading: 'lazy', decoding: 'async', draggable: 'false' });
-  img.addEventListener('load', () => { img.classList.add('loaded'); t.el.classList.add('shown'); });
+  img.addEventListener('load', () => img.classList.add('loaded'));
   img.addEventListener('error', () => {
     if (u.kind === 'image' && inline(u) && !img.dataset.remote) { img.dataset.remote = '1'; img.src = u.url; }
     else if (u.kind === 'video' && inline(u)) img.replaceWith(firstFrame(t));
@@ -167,14 +149,13 @@ function firstFrame(t) {
   const v = h('video', { class: 'cover', muted: true, playsinline: true, preload: 'metadata', 'aria-hidden': 'true' });
   v.muted = true;
   v.addEventListener('loadedmetadata', () => setDuration(u.id, v.duration));
-  v.addEventListener('loadeddata', () => { v.classList.add('loaded'); t.el.classList.add('shown'); });
+  v.addEventListener('loadeddata', () => v.classList.add('loaded'));
   v.addEventListener('error', () => toDoc(t));
   v.src = `${u.url}#t=0.1`;
   return v;
 }
 
 function toDoc(t) {
-  t.el.classList.remove('shown');
   t.badge = null;
   t.el.replaceChildren(doc(t), t.act);
 }
@@ -301,7 +282,7 @@ function onTileClick(e) {
   if (!id) { select([]); return; }
   if (e.shiftKey && state.anchor) {
     select(range(state.anchor, id), id, { scroll: false, anchor: state.anchor });
-  } else if (isMac() ? e.metaKey : e.ctrlKey) {
+  } else if (cmdKey(e)) {
     const picked = new Set(state.selection);
     if (!picked.delete(id)) picked.add(id);
     select(picked, id, { scroll: false });
@@ -340,7 +321,7 @@ function move(key, extend = false) {
 
 function onKey(e) {
   if (e.isComposing) return;
-  const mod = isMac() ? e.metaKey : e.ctrlKey;
+  const mod = cmdKey(e);
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   const onButton = e.target.closest?.('button') && (key === ' ' || key === 'Enter');
   const copying = mod && key === 'c' && !getSelection().toString();
@@ -362,7 +343,7 @@ function onKey(e) {
     }
     return;
   }
-  if (bulk.asking) {
+  if (bulk.phase === 'asking') {
     if (key === 'Escape') { e.preventDefault(); closeBulk(); grid.focus(); }
     return;
   }
@@ -395,7 +376,6 @@ function selectAll() {
 function onSearch() {
   const input = $('search');
   state.query = input.value.trim();
-  input.closest('.search').classList.toggle('filled', !!input.value);
   render();
 }
 
@@ -440,19 +420,19 @@ async function copy(id, button) {
 // ---------------------------------------------------------------- deleting several
 
 // The bar at the bottom: shown for more than one selected tile, and for a delete to confirm or in progress.
-const bulk = { asking: false, busy: false, done: 0, total: 0 };
+const bulk = { phase: 'idle', done: 0, total: 0 }; // 'idle' | 'asking' | 'deleting'
 
 function renderBar() {
   const bar = $('selbar');
   const n = state.selection.size;
-  const on = bulk.busy || bulk.asking || n > 1;
+  const on = bulk.phase !== 'idle' || n > 1;
   bar.classList.toggle('on', on);
   bar.inert = !on || !!pv.id;
   if (!on) return;
   let title, sub = '';
-  if (bulk.busy) {
+  if (bulk.phase === 'deleting') {
     title = `Deleting ${Math.min(bulk.done + 1, bulk.total)} of ${bulk.total}…`;
-  } else if (bulk.asking) {
+  } else if (bulk.phase === 'asking') {
     title = n === 1 ? 'Delete this upload?' : `Delete ${n} uploads?`;
     sub = n === 1 ? 'The link stops working.' : 'The links stop working.';
   } else {
@@ -462,20 +442,20 @@ function renderBar() {
   $('sel-title').textContent = title;
   $('sel-sub').textContent = sub;
   $('sel-all').textContent = n === state.order.length ? 'Deselect All' : 'Select All';
-  $('sel-all').hidden = $('sel-delete').hidden = bulk.busy || bulk.asking;
-  $('sel-cancel').hidden = $('sel-really').hidden = !bulk.asking;
+  $('sel-all').hidden = $('sel-delete').hidden = bulk.phase !== 'idle';
+  $('sel-cancel').hidden = $('sel-really').hidden = bulk.phase !== 'asking';
 }
 
 function askBulk() {
-  if (bulk.busy || !state.selection.size) return;
-  bulk.asking = true;
+  if (bulk.phase === 'deleting' || !state.selection.size) return;
+  bulk.phase = 'asking';
   renderBar();
   $('sel-cancel').focus();
 }
 
 function closeBulk() {
-  if (!bulk.asking) return;
-  bulk.asking = false;
+  if (bulk.phase !== 'asking') return;
+  bulk.phase = 'idle';
   renderBar();
 }
 
@@ -483,7 +463,7 @@ function closeBulk() {
 // (most are the server or the token) and leaves what's left selected.
 async function deleteSelected() {
   const ids = state.order.filter((id) => state.selection.has(id));
-  Object.assign(bulk, { asking: false, busy: true, done: 0, total: ids.length });
+  Object.assign(bulk, { phase: 'deleting', done: 0, total: ids.length });
   renderBar();
   grid.focus({ preventScroll: true });
   let error = null;
@@ -499,7 +479,7 @@ async function deleteSelected() {
     }
   };
   await Promise.all(Array.from({ length: Math.min(4, bulk.total) }, worker));
-  bulk.busy = false;
+  bulk.phase = 'idle';
   renderBar();
   if (!error) toast(bulk.total === 1 ? 'Upload deleted' : `${bulk.total} uploads deleted`);
   else toast(bulk.done ? `Deleted ${bulk.done} of ${bulk.total}. ${error}` : error, false);
@@ -512,7 +492,6 @@ const pv = {
   id: null,
   size: [4, 3], // the content's natural size
   cap: Infinity, // how far it may be scaled up (1: not past its natural size)
-  stop: null,    // stops the player's animation frame loop
   copyTimer: 0,
 };
 
@@ -524,8 +503,8 @@ function openPreview(id) {
   else select([id]);
   pv.id = id;
   $('preview').hidden = false;
+  for (const a of $('preview').getAnimations({ subtree: true })) a.cancel();
   $('bar').inert = grid.inert = true;
-  $('bar').classList.add('behind');
   renderBar();
   showItem(t);
   $('preview').focus({ preventScroll: true });
@@ -539,20 +518,15 @@ function closePreview() {
   stopMedia();
   closeConfirm();
   $('bar').inert = grid.inert = false;
-  $('bar').classList.remove('behind');
   renderBar();
   grid.focus({ preventScroll: true });
   t?.el.scrollIntoView({ block: 'nearest' });
-  zoom(t, false).finished.then(() => {
-    if (pv.id) return; // opened again meanwhile
-    $('preview').hidden = true;
-    for (const a of $('preview').getAnimations({ subtree: true })) a.cancel();
-  });
+  zoom(t, false).finished.then(() => { $('preview').hidden = true; }, () => {});
 }
 
 function step(by) {
   const i = state.order.indexOf(pv.id) + by;
-  if (i < 0 || i >= state.order.length) return;
+  if (!pv.id || i < 0 || i >= state.order.length) return;
   select([state.order[i]]);
   showItem(tiles.get(state.order[i]), true);
 }
@@ -567,10 +541,8 @@ function showItem(t, fade = false) {
   clearTimeout(pv.copyTimer);
   $('pv-copy').replaceChildren('Copy Link');
   const i = state.order.indexOf(u.id);
-  for (const [b, off] of [[$('pv-prev'), i <= 0], [$('pv-next'), i >= state.order.length - 1]]) {
-    b.disabled = off;
-    b.classList.toggle('off', off);
-  }
+  $('pv-prev').disabled = i <= 0;
+  $('pv-next').disabled = i >= state.order.length - 1;
   buildMedia(t);
   if (fade) fadeIn($('pv-media'));
 }
@@ -593,8 +565,9 @@ function pvMeta(u) {
 function tileImage(t) {
   const el = t.el.querySelector('.cover.loaded, .doc-art img');
   if (!el) return null;
-  const [w, hgt] = el.tagName === 'VIDEO' ? [el.videoWidth, el.videoHeight] : [el.naturalWidth, el.naturalHeight];
-  return w && hgt ? { el, src: el.currentSrc, size: [w, hgt], remote: el.tagName === 'VIDEO' || !!el.dataset.remote } : null;
+  const video = el.tagName === 'VIDEO';
+  const [w, hgt] = video ? [el.videoWidth, el.videoHeight] : [el.naturalWidth, el.naturalHeight];
+  return w && hgt ? { size: [w, hgt], src: video ? null : el.currentSrc, remote: video || !!el.dataset.remote } : null;
 }
 
 function buildMedia(t) {
@@ -604,6 +577,7 @@ function buildMedia(t) {
   box.className = 'media';
   box.replaceChildren();
   const shown = tileImage(t);
+  const src = shown?.src ?? previewUrl(u.id);
   // A preview at core's full size stands in for a bigger picture that replaces it, so until then it may be
   // scaled up; anything else isn't.
   const replaced = inline(u) && (u.kind === 'image' || u.kind === 'video');
@@ -611,7 +585,7 @@ function buildMedia(t) {
   setSize(shown?.size ?? [4, 3], shown ? capFor(...shown.size, shown.remote) : Infinity);
 
   if (u.kind === 'audio') return audioCard(u, box);
-  if (u.kind === 'video' && inline(u)) return videoPlayer(u, box, shown);
+  if (u.kind === 'video' && inline(u)) return videoPlayer(u, box, src);
 
   const img = h('img', { alt: '', draggable: 'false' });
   img.addEventListener('load', () => {
@@ -623,7 +597,7 @@ function buildMedia(t) {
     else fileCard(u, box);
   });
   if (shown?.remote) img.dataset.remote = '1';
-  img.src = shown && shown.el.tagName !== 'VIDEO' ? shown.src : previewUrl(u.id);
+  img.src = src;
   box.append(img);
 
   // The full image replaces the preview once it has loaded.
@@ -655,9 +629,8 @@ function audioCard(u, box) {
   card.append(el, player(u, el, box, [...bars.children]));
 }
 
-function videoPlayer(u, box, shown) {
+function videoPlayer(u, box, poster) {
   const v = h('video', { playsinline: true, preload: 'metadata' });
-  const poster = shown && shown.el.tagName !== 'VIDEO' ? shown.src : previewUrl(u.id);
   v.poster = poster;
   v.addEventListener('loadedmetadata', () => {
     if (pv.id === u.id && v.videoWidth) setSize([v.videoWidth, v.videoHeight], 1, true);
@@ -683,7 +656,7 @@ function player(u, el, box, bars) {
     now.textContent = clock(el.currentTime);
     bars?.forEach((b, i) => b.classList.toggle('played', (i + 0.5) / bars.length <= f));
   };
-  const loop = () => { update(); frame = requestAnimationFrame(loop); };
+  const loop = () => { if (el.paused) return; update(); frame = requestAnimationFrame(loop); };
   const setIcon = (name, label) => {
     btn.querySelector('use').setAttribute('href', `#i-${name}`);
     btn.setAttribute('aria-label', label);
@@ -713,15 +686,12 @@ function player(u, el, box, bars) {
   };
   track.addEventListener('pointerdown', (e) => { track.setPointerCapture(e.pointerId); seek(e); });
   track.addEventListener('pointermove', (e) => { if (track.hasPointerCapture(e.pointerId)) seek(e); });
-  pv.stop = () => cancelAnimationFrame(frame);
   const bar = h('div', { class: 'controls' }, btn, now, track, total);
   bar.toggle = toggle;
   return bar;
 }
 
 function stopMedia() {
-  pv.stop?.();
-  pv.stop = null;
   for (const m of $('pv-media').querySelectorAll('video, audio')) {
     m.pause();
     m.removeAttribute('src');

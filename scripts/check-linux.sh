@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Checks the desktop app compiles for Linux, in an ubuntu:24.04 container (native arch, e.g. arm64 under colima).
 #
-#   scripts/check-linux.sh                       cargo check --all-targets
+#   scripts/check-linux.sh                       cargo check
 #   scripts/check-linux.sh build                 any cargo arguments, e.g. a debug build that links
-#   scripts/check-linux.sh clippy --all-targets
+#   scripts/check-linux.sh clippy
 #
 # The repo is mounted read-only and copied into the container (tauri-build writes src-tauri/gen).
 # Named volumes keep the target dir and the cargo registry, so re-runs are incremental.
@@ -30,7 +30,7 @@ EOF
   exit 1
 fi
 
-[ $# -gt 0 ] || set -- check --all-targets
+[ $# -gt 0 ] || set -- check
 
 docker run --rm \
   --volume "$repo:/src:ro" \

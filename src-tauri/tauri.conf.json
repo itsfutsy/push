@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Push",
-  "version": "0.9.1",
   "identifier": "io.github.itsfutsy.push",
   "build": {
     "frontendDist": "../ui"
