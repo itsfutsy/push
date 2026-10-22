@@ -58,50 +58,6 @@ User-agent: *
 Disallow: /
 ";
 
-struct Config {
-    token: String,
-    public_url: String,
-    data_dir: PathBuf,
-    port: u16,
-    root_redirect: Option<HeaderValue>,
-}
-
-impl Config {
-    fn from_env() -> Result<Self, String> {
-        let token = env("PUSH_TOKEN").ok_or("PUSH_TOKEN is not set")?;
-        if token.len() < 32 {
-            return Err(
-                "PUSH_TOKEN is too short: use at least 32 characters (openssl rand -hex 32)".into(),
-            );
-        }
-        let public_url = env("PUSH_PUBLIC_URL")
-            .ok_or("PUSH_PUBLIC_URL is not set, for example https://share.example.com")?
-            .trim_end_matches('/')
-            .to_owned();
-        if !is_url(&public_url) {
-            return Err(format!(
-                "PUSH_PUBLIC_URL is not an http(s) URL: {public_url}"
-            ));
-        }
-        let root_redirect = match env("PUSH_ROOT_REDIRECT") {
-            None => None,
-            Some(url) if is_url(&url) => {
-                Some(HeaderValue::try_from(url).map_err(|e| e.to_string())?)
-            }
-            Some(url) => return Err(format!("PUSH_ROOT_REDIRECT is not an http(s) URL: {url}")),
-        };
-        let port = port()?;
-        let data_dir = PathBuf::from(env("PUSH_DATA_DIR").unwrap_or_else(|| "/data".into()));
-        Ok(Self {
-            token,
-            public_url,
-            data_dir,
-            port,
-            root_redirect,
-        })
-    }
-}
-
 /// A setting, trimmed. Blank counts as unset: docker-compose passes an unset optional one as "".
 fn env(key: &str) -> Option<String> {
     std::env::var(key)
@@ -139,10 +95,33 @@ struct App {
 }
 
 impl App {
-    /// Creates the storage dirs and checks they are writable, so a bad volume fails loudly at boot.
-    fn new(config: &Config) -> Result<Self, String> {
-        let files = config.data_dir.join("files");
-        let tmp = config.data_dir.join("tmp");
+    fn from_env() -> Result<Self, String> {
+        let token = env("PUSH_TOKEN").ok_or("PUSH_TOKEN is not set")?;
+        if token.len() < 32 {
+            return Err(
+                "PUSH_TOKEN is too short: use at least 32 characters (openssl rand -hex 32)".into(),
+            );
+        }
+        let public_url = env("PUSH_PUBLIC_URL")
+            .ok_or("PUSH_PUBLIC_URL is not set, for example https://share.example.com")?
+            .trim_end_matches('/')
+            .to_owned();
+        if !is_url(&public_url) {
+            return Err(format!(
+                "PUSH_PUBLIC_URL is not an http(s) URL: {public_url}"
+            ));
+        }
+        let root_redirect = match env("PUSH_ROOT_REDIRECT") {
+            None => None,
+            Some(url) if is_url(&url) => {
+                Some(HeaderValue::try_from(url).map_err(|e| e.to_string())?)
+            }
+            Some(url) => return Err(format!("PUSH_ROOT_REDIRECT is not an http(s) URL: {url}")),
+        };
+        let data_dir = PathBuf::from(env("PUSH_DATA_DIR").unwrap_or_else(|| "/data".into()));
+        let files = data_dir.join("files");
+        let tmp = data_dir.join("tmp");
+        // Create the storage dirs and check they're writable, so a bad volume fails loudly at boot.
         for dir in [&files, &tmp] {
             let probe = dir.join(".write-test");
             std::fs::create_dir_all(dir)
@@ -156,9 +135,9 @@ impl App {
                 })?;
         }
         Ok(Self {
-            token: config.token.as_bytes().to_vec(),
-            public_url: config.public_url.clone(),
-            root_redirect: config.root_redirect.clone(),
+            token: token.into_bytes(),
+            public_url,
+            root_redirect,
             files,
             tmp,
             uploading: Arc::default(),
@@ -633,8 +612,8 @@ fn healthcheck() -> ExitCode {
 }
 
 async fn run() -> Result<(), String> {
-    let config = Config::from_env()?;
-    let app = Arc::new(App::new(&config)?);
+    let port = port()?;
+    let app = Arc::new(App::from_env()?);
 
     let cleanup = app.clone();
     std::thread::spawn(move || {
@@ -648,10 +627,10 @@ async fn run() -> Result<(), String> {
         }
     });
 
-    let listener = tokio::net::TcpListener::bind(("0.0.0.0", config.port))
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", port))
         .await
-        .map_err(|e| format!("cannot listen on port {}: {e}", config.port))?;
-    tracing::info!(port = config.port, data = %config.data_dir.display(), "listening");
+        .map_err(|e| format!("cannot listen on port {port}: {e}"))?;
+    tracing::info!(port, files = %app.files.display(), "listening");
     axum::serve(listener, router(app))
         .with_graceful_shutdown(shutdown_signal())
         .await
