@@ -34,13 +34,12 @@ function applyUploads(list, initial = false) {
     if (!ids.has(id)) { tiles.delete(id); seen.unobserve(t.el); }
   }
   // The upload being previewed was deleted: move on to its neighbour, the way Quick Look does.
-  const next = pv.id && !ids.has(pv.id)
-    ? state.order.slice(state.order.indexOf(pv.id) + 1).find((id) => ids.has(id))
-      ?? state.order.slice(0, state.order.indexOf(pv.id)).findLast((id) => ids.has(id))
-    : null;
+  const gone = pv.id && !ids.has(pv.id);
+  const i = state.order.indexOf(pv.id);
+  const next = gone && (state.order.slice(i + 1).find((id) => ids.has(id)) ?? state.order.slice(0, i).findLast((id) => ids.has(id)));
   state.uploads = done;
   render(!initial);
-  if (pv.id && !ids.has(pv.id)) {
+  if (gone) {
     if (next) { select([next]); showItem(tiles.get(next), true); } else closePreview();
   }
 }
@@ -89,10 +88,7 @@ function render(animate = false) {
   // Tiles that are no longer shown aren't selected.
   const ids = new Set(state.order);
   const keep = (id) => (ids.has(id) ? id : null);
-  if (![...state.selection, state.current].every((id) => !id || ids.has(id))) {
-    select([...state.selection].filter(keep), keep(state.current), { scroll: false, anchor: keep(state.anchor) });
-  }
-  renderBar();
+  select([...state.selection].filter(keep), keep(state.current), { scroll: false, anchor: keep(state.anchor) });
 }
 
 function renderEmpty(empty) {
