@@ -2,7 +2,7 @@
 //! clipboard batches, cancel, retry and delete.
 
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -85,26 +85,9 @@ impl Stamp {
     }
 }
 
-/// The links of one intake event (a drop, a picker selection, a share), in intake order.
-#[derive(Default)]
-struct Batch {
-    ids: Vec<String>,
-    urls: HashMap<String, String>,
-}
-
-impl Batch {
-    /// Records a finished upload and returns the clipboard text: every finished link, one per line.
-    fn finish(&mut self, id: &str, url: &str) -> String {
-        self.urls.insert(id.to_owned(), url.to_owned());
-        let links: Vec<&str> = self.ids.iter().filter_map(|id| self.urls.get(id)).map(String::as_str).collect();
-        links.join("\n")
-    }
-}
-
 #[derive(Default)]
 pub struct Uploads {
     items: Vec<Item>,
-    batches: HashMap<u64, Batch>,
     counter: u64,
     /// The uploading item and the switch that cancels it.
     current: Option<(String, oneshot::Sender<()>)>,
@@ -183,21 +166,18 @@ impl Uploads {
             let seq = self.next();
             self.items.push(Item { upload, seq, path: Some(path), origin, batch, last_attempt: None });
         }
-        if !queued.is_empty() {
-            self.batches.insert(batch, Batch { ids: queued.clone(), urls: HashMap::new() });
-        }
         queued
     }
 
-    /// Drops batches with nothing left to finish.
-    fn prune_batches(&mut self) {
-        let pending: HashSet<u64> = self
+    /// The clipboard text: every finished link of `batch`, in intake order.
+    fn links(&self, batch: u64) -> String {
+        let links: Vec<&str> = self
             .items
             .iter()
-            .filter(|i| matches!(i.upload.status, Status::Queued | Status::Uploading))
-            .map(|i| i.batch)
+            .filter(|i| i.batch == batch && i.upload.status == Status::Done)
+            .map(|i| i.upload.url.as_str())
             .collect();
-        self.batches.retain(|batch, _| pending.contains(batch));
+        links.join("\n")
     }
 
     fn trim_done(&mut self) {
@@ -485,11 +465,11 @@ fn finish(app: &AppHandle, id: &str, result: Result<(String, u64), UploadError>)
         match result {
             Ok((url, size)) => {
                 item.upload.status = Status::Done;
-                item.upload.url = url.clone();
+                item.upload.url = url;
                 item.upload.size = size;
                 item.upload.sent = size;
                 item.upload.error = None;
-                done = Some((item.batch, url, item.path.take(), item.origin.clone()));
+                done = Some((item.batch, item.path.take(), item.origin.clone()));
             }
             Err(error) => {
                 item.upload.status = Status::Failed;
@@ -498,12 +478,11 @@ fn finish(app: &AppHandle, id: &str, result: Result<(String, u64), UploadError>)
         }
         let upload = item.upload.clone();
         let mut cleanup = Cleanup::None;
-        if let Some((batch, url, path, origin)) = done {
-            clipboard = Some(uploads.batches.get_mut(&batch).map_or_else(|| url.clone(), |b| b.finish(id, &url)));
+        if let Some((batch, path, origin)) = done {
+            clipboard = Some(uploads.links(batch));
             cleanup = uploads.cleanup_for(path, &origin);
             uploads.trim_done();
         }
-        uploads.prune_batches();
         (upload, clipboard, cleanup)
     };
     if let Some(text) = clipboard {
@@ -534,7 +513,6 @@ pub fn cancel(app: &AppHandle, id: &str) -> Result<(), String> {
         {
             let _ = cancel.send(());
         }
-        uploads.prune_batches();
         let on_server = item.may_be_on_server().then(|| item.upload.name.clone());
         (uploads.cleanup_for(item.path, &item.origin), on_server)
     };
@@ -590,7 +568,6 @@ pub async fn retry(app: &AppHandle, id: &str) -> Result<(), String> {
         item.upload.sent = 0;
         item.upload.size = size;
         item.batch = batch;
-        uploads.batches.insert(batch, Batch { ids: vec![id.to_owned()], urls: HashMap::new() });
     }
     let _ = core.jobs.send(id.to_owned());
     emit_uploads(app);
