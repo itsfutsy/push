@@ -526,7 +526,7 @@ function closePreview() {
 
 function step(by) {
   const i = state.order.indexOf(pv.id) + by;
-  if (i < 0 || i >= state.order.length) return;
+  if (!pv.id || i < 0 || i >= state.order.length) return;
   select([state.order[i]]);
   showItem(tiles.get(state.order[i]), true);
 }
