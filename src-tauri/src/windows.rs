@@ -2,17 +2,23 @@
 //!
 //! Never call these while holding a `Core` lock: window calls block on the main thread.
 
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+use crate::Core;
 use crate::model::{HudPayload, Navigate, Upload, View};
 
-pub fn show_main(app: &AppHandle) {
+/// Brings a window forward, with a Dock icon (macOS) while it shows.
+fn present(window: &WebviewWindow) {
     #[cfg(target_os = "macos")]
-    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+    let _ = window.app_handle().set_activation_policy(tauri::ActivationPolicy::Regular);
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
+pub fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+        present(&window);
     }
 }
 
@@ -32,11 +38,7 @@ pub fn show_library(app: &AppHandle) {
         }
         return;
     };
-    #[cfg(target_os = "macos")]
-    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-    let _ = window.unminimize();
-    let _ = window.show();
-    let _ = window.set_focus();
+    present(&window);
 }
 
 fn build_library(app: &AppHandle) -> tauri::Result<()> {
@@ -76,7 +78,6 @@ pub fn navigate(app: &AppHandle, view: View) {
 }
 
 /// The main window is showing and has focus, so it already tells the user everything.
-#[cfg(target_os = "macos")]
 fn main_active(app: &AppHandle) -> bool {
     app.get_webview_window("main")
         .is_some_and(|w| w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false))
@@ -96,19 +97,16 @@ pub fn announce(app: &AppHandle, upload: &Upload, started: bool) {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = started;
-        if matches!(upload.status, crate::model::Status::Done | crate::model::Status::Failed) {
-            let focused = app.get_webview_window("main").is_some_and(|w| w.is_focused().unwrap_or(false));
-            if !focused {
-                notify::upload(app, upload);
-            }
+        if matches!(upload.status, crate::model::Status::Done | crate::model::Status::Failed) && !main_active(app) {
+            notify::upload(app, upload);
         }
     }
 }
 
 /// The item is gone: stop showing it.
 pub fn forget(app: &AppHandle, id: &str) {
-    let hud = app.state::<crate::Core>().hud.lock().unwrap().as_ref().map(|p| matches!(p, HudPayload::Upload { upload } if upload.id == id));
-    if hud == Some(true) {
+    let shown = matches!(&*app.state::<Core>().hud.lock().unwrap(), Some(HudPayload::Upload { upload }) if upload.id == id);
+    if shown {
         hide_hud(app);
     }
 }
@@ -130,7 +128,7 @@ pub fn capture_failed(reason: &str) {
 }
 
 pub fn hud_payload(app: &AppHandle) -> Option<HudPayload> {
-    app.state::<crate::Core>().hud.lock().unwrap().clone()
+    app.state::<Core>().hud.lock().unwrap().clone()
 }
 
 /// Whether the pointer is over the HUD. Its page can't tell: the window is never key, so
@@ -168,7 +166,7 @@ pub fn capture_ended(app: &AppHandle) {
 pub fn hud_loaded(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     {
-        let pending = app.state::<crate::Core>().hud.lock().unwrap().is_some();
+        let pending = app.state::<Core>().hud.lock().unwrap().is_some();
         if pending && let Some(window) = app.get_webview_window("hud") {
             hud::reveal(app, &window);
         }
