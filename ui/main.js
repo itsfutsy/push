@@ -634,7 +634,10 @@ function onRecorderKey(e) {
   if (!recording) return;
   e.preventDefault();
   e.stopPropagation();
-  if (e.type === 'keyup' || ['Meta', 'Control', 'Alt', 'Shift', 'CapsLock', 'Fn'].includes(e.key)) {
+  // Windows only reports Print Screen coming up, so that key is recorded on its keyup.
+  const printScreen = e.code === 'PrintScreen';
+  if (printScreen && e.type === 'keydown') return;
+  if ((e.type === 'keyup' && !printScreen) || ['Meta', 'Control', 'Alt', 'Shift', 'CapsLock', 'Fn'].includes(e.key)) {
     // Both Command keys on their own are a shortcut too. WebKit reports letting go of one while the other
     // is held as another keydown, and a keyup only once both are up, so each keydown toggles its key.
     if (!e.metaKey) commandKeys.clear();
@@ -650,10 +653,6 @@ function onRecorderKey(e) {
   const plain = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
   if (e.key === 'Escape') { stopRecording(); return; }
   if (plain && (e.key === 'Backspace' || e.key === 'Delete')) { saveShortcut(null); return; }
-  if (!e.metaKey && !e.ctrlKey) {
-    setFieldError('shortcut', isMac() ? 'Include ⌘ or ⌃ in the shortcut.' : `Include Ctrl or ${isWindows() ? 'Win' : 'Super'} in the shortcut.`);
-    return;
-  }
   const accel = [e.metaKey && (isMac() ? 'Command' : 'Super'), e.ctrlKey && 'Control', e.altKey && 'Alt', e.shiftKey && 'Shift', e.code];
   saveShortcut(accel.filter(Boolean).join('+'));
 }
