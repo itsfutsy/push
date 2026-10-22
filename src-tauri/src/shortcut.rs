@@ -7,7 +7,10 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, Short
 use crate::command_keys;
 use crate::{Core, capture, intake};
 
-pub const IN_USE: &str = "That shortcut is in use. Try another.";
+/// Global shortcuts go through X11; on Wayland they register fine and then never fire.
+pub fn supported() -> bool {
+    !cfg!(target_os = "linux") || !capture::wayland()
+}
 
 #[derive(Clone, Copy)]
 pub enum Hotkey {
@@ -41,7 +44,7 @@ fn register(app: &AppHandle, hotkey: Hotkey) -> Result<(), String> {
                     intake::capture(app);
                 }
             })
-            .map_err(|_| IN_USE.to_owned()),
+            .map_err(|_| "That shortcut is in use. Try another.".to_owned()),
         #[cfg(target_os = "macos")]
         Hotkey::BothCommands => command_keys::watch(app),
     }
@@ -59,6 +62,9 @@ fn unregister(app: &AppHandle, hotkey: Hotkey) {
 
 /// Swaps the registered shortcut for `next`. On failure the previous one is restored.
 pub fn replace(app: &AppHandle, next: Option<Hotkey>) -> Result<(), String> {
+    if !supported() {
+        return Ok(());
+    }
     let core = app.state::<Core>();
     let mut current = core.shortcut.lock().unwrap();
     let previous = current.take();
@@ -80,9 +86,6 @@ pub fn replace(app: &AppHandle, next: Option<Hotkey>) -> Result<(), String> {
 
 /// While the shortcut recorder is active, pressing the current combo must not capture.
 pub fn pause(app: &AppHandle, paused: bool) -> Result<(), String> {
-    if !capture::shortcut_supported() {
-        return Ok(());
-    }
     if paused {
         return replace(app, None);
     }
@@ -96,13 +99,7 @@ pub fn pause(app: &AppHandle, paused: bool) -> Result<(), String> {
 
 /// Registers the saved shortcut at launch.
 pub fn init(app: &AppHandle) {
-    if !capture::shortcut_supported() {
-        return;
-    }
-    let accelerator = app.state::<Core>().settings.lock().unwrap().shortcut.clone();
-    if let Some(accelerator) = accelerator
-        && let Err(e) = parse(&accelerator).and_then(|s| replace(app, Some(s)))
-    {
-        eprintln!("push: shortcut {accelerator} not registered: {e}");
+    if let Err(e) = pause(app, false) {
+        eprintln!("push: saved shortcut not registered: {e}");
     }
 }

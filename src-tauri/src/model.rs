@@ -6,9 +6,6 @@ use rand::RngExt;
 use rand::distr::Alphanumeric;
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_SERVER: &str = "";
-pub const DEFAULT_SHORTCUT: &str = "CommandOrControl+Shift+Digit2";
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
@@ -37,7 +34,7 @@ pub enum ErrorKind {
     Missing,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UploadError {
     pub kind: ErrorKind,
     pub message: String,
@@ -68,7 +65,7 @@ pub struct Upload {
     pub thumb: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub server_url: String,
@@ -79,8 +76,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            server_url: DEFAULT_SERVER.into(),
-            shortcut: Some(DEFAULT_SHORTCUT.into()),
+            server_url: String::new(),
+            shortcut: Some("CommandOrControl+Shift+Digit2".into()),
             launch_at_login: false,
         }
     }
@@ -140,14 +137,6 @@ pub struct Progress {
     pub total: u64,
 }
 
-pub const PLATFORM: &str = if cfg!(target_os = "macos") {
-    "macos"
-} else if cfg!(windows) {
-    "windows"
-} else {
-    "linux"
-};
-
 /// 10 base62 characters from the thread-local CSPRNG (seeded from the OS).
 pub fn new_id() -> String {
     rand::rng().sample_iter(Alphanumeric).take(10).map(char::from).collect()
@@ -174,12 +163,6 @@ pub fn kind_for(ext: &str) -> Kind {
         "mp3" | "m4a" | "wav" | "aac" | "flac" | "ogg" => Kind::Audio,
         _ => Kind::File,
     }
-}
-
-
-/// "Screenshot 2026-10-21 at 14.03.22.png", like macOS names its own screenshots.
-pub fn screenshot_name(at: chrono::DateTime<chrono::Local>) -> String {
-    at.format("Screenshot %Y-%m-%d at %H.%M.%S.png").to_string()
 }
 
 pub fn now_ms() -> u64 {

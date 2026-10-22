@@ -5,9 +5,9 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
 
-use crate::model::{AppInfo, Connection, ConnectionStatus, HudPayload, PLATFORM, Settings, View};
+use crate::model::{AppInfo, Connection, ConnectionStatus, HudPayload, Settings, View};
 use crate::net::{Api, validate_server_url};
-use crate::{Core, capture, intake, queue, shortcut, store, tray, windows};
+use crate::{Core, intake, queue, shortcut, store, tray, windows};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -16,9 +16,11 @@ fn update_settings(app: &AppHandle, change: impl FnOnce(&mut Settings)) -> Resul
     let core = app.state::<Core>();
     let settings = {
         let mut settings = core.settings.lock().unwrap();
-        change(&mut settings);
-        store::save_settings(&core.settings_path, &settings).map_err(|_| "Couldn’t save the settings.")?;
-        settings.clone()
+        let mut next = settings.clone();
+        change(&mut next);
+        store::save_settings(&core.settings_path, &next).map_err(|_| "Couldn’t save the settings.")?;
+        *settings = next.clone();
+        next
     };
     tray::refresh(app);
     let _ = app.emit("settings", &settings);
@@ -26,19 +28,19 @@ fn update_settings(app: &AppHandle, change: impl FnOnce(&mut Settings)) -> Resul
 }
 
 #[tauri::command]
-pub async fn get_info(app: AppHandle) -> Result<AppInfo> {
+pub async fn get_info(app: AppHandle) -> AppInfo {
     let core = app.state::<Core>();
     let has_token = core.token.has().await;
     let settings = core.settings.lock().unwrap().clone();
     let uploads = core.uploads.lock().unwrap().list();
-    Ok(AppInfo {
+    AppInfo {
         settings,
         has_token,
-        platform: PLATFORM,
-        shortcut_supported: capture::shortcut_supported(),
+        platform: std::env::consts::OS,
+        shortcut_supported: shortcut::supported(),
         version: app.package_info().version.to_string(),
         uploads,
-    })
+    }
 }
 
 #[tauri::command]
@@ -60,28 +62,26 @@ pub async fn set_token(app: AppHandle, token: String) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn test_connection(app: AppHandle) -> Result<Connection> {
+pub async fn test_connection(app: AppHandle) -> Connection {
     let core = app.state::<Core>();
     let token = core.token.get().await.ok().flatten();
     let server = core.settings.lock().unwrap().server_url.clone();
     let connection = |status, message: &str| Connection { status, message: message.into() };
     let (Some(token), Ok(base)) = (token, validate_server_url(&server)) else {
-        return Ok(connection(ConnectionStatus::Unconfigured, "Enter a server URL and token."));
+        return connection(ConnectionStatus::Unconfigured, "Enter a server URL and token.");
     };
-    Ok(match Api::new(core.http.clone(), base, token).ping().await {
+    match Api::new(core.http.clone(), base, token).ping().await {
         Ok(204) => connection(ConnectionStatus::Connected, ""),
         Ok(401) => connection(ConnectionStatus::Unauthorized, "The token wasn’t accepted."),
         _ => connection(ConnectionStatus::Unreachable, "The server didn’t respond."),
-    })
+    }
 }
 
 #[tauri::command]
 pub async fn set_shortcut(app: AppHandle, accelerator: Option<String>) -> Result<Settings> {
     let accelerator = accelerator.map(|a| a.trim().to_owned()).filter(|a| !a.is_empty());
     let next = accelerator.as_deref().map(shortcut::parse).transpose()?;
-    if capture::shortcut_supported() {
-        shortcut::replace(&app, next)?;
-    }
+    shortcut::replace(&app, next)?;
     update_settings(&app, |s| s.shortcut = accelerator)
 }
 
@@ -99,9 +99,8 @@ pub async fn set_launch_at_login(app: AppHandle, enabled: bool) -> Result<Settin
 }
 
 #[tauri::command]
-pub async fn pick_files(app: AppHandle) -> Result<()> {
+pub async fn pick_files(app: AppHandle) {
     intake::pick_files(&app);
-    Ok(())
 }
 
 #[tauri::command]
@@ -132,37 +131,34 @@ pub async fn retry_upload(app: AppHandle, id: String) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn show_main(app: AppHandle, view: View) -> Result<()> {
+pub async fn show_main(app: AppHandle, view: View) {
     windows::show_main(&app);
     windows::navigate(&app, view);
-    Ok(())
 }
 
 #[tauri::command]
-pub async fn show_library(app: AppHandle) -> Result<()> {
+pub async fn show_library(app: AppHandle) {
     windows::show_library(&app);
-    Ok(())
 }
 
 #[tauri::command]
-pub async fn hud_ready(app: AppHandle) -> Result<Option<HudPayload>> {
-    Ok(windows::hud_payload(&app))
+pub async fn hud_ready(app: AppHandle) -> Option<HudPayload> {
+    windows::hud_payload(&app)
 }
 
 #[tauri::command]
-pub async fn hud_hovered(app: AppHandle) -> Result<bool> {
-    Ok(windows::hud_hovered(&app))
+pub async fn hud_hovered(app: AppHandle) -> bool {
+    windows::hud_hovered(&app)
 }
 
 #[tauri::command]
-pub async fn hud_dismiss(app: AppHandle) -> Result<()> {
+pub async fn hud_dismiss(app: AppHandle) {
     windows::hide_hud(&app);
-    Ok(())
 }
 
 #[tauri::command]
-pub async fn open_permission_settings() -> Result<()> {
-    tauri::async_runtime::spawn_blocking(capture::open_permission_settings)
-        .await
+pub async fn open_permission_settings(app: AppHandle) -> Result<()> {
+    app.opener()
+        .open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture", None::<&str>)
         .map_err(|_| "Couldn’t open System Settings.".into())
 }

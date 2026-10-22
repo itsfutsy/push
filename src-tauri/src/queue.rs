@@ -1,9 +1,9 @@
 //! The upload list and its single FIFO worker: intake, progress, completion,
 //! clipboard batches, cancel, retry and delete.
 
-use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::cmp::Reverse;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -16,8 +16,8 @@ use tokio::sync::{mpsc, oneshot};
 use crate::model::{
     ErrorKind, Kind, Progress, Status, Upload, UploadError, kind_for, new_id, now_ms, sanitize_ext,
 };
-use crate::net::{Api, is_web_url, validate_server_url};
-use crate::transfer::{self, OnSent, POLICY, Sent};
+use crate::net::{Api, OnSent, is_web_url, validate_server_url};
+use crate::transfer::{self, Sent};
 use crate::{Core, preview, store, tray, windows};
 
 /// Longest edge of the inline thumbnail images get while they upload, in pixels (the HUD shows
@@ -29,9 +29,9 @@ const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 /// they can complete the file on the server well after the first delete.
 const DISCARD_AGAIN: Duration = Duration::from_secs(60);
 
-pub const GONE: &str = "That upload isn’t there anymore.";
-pub const NO_TOKEN: &str = "Add your upload token in Settings.";
-pub const BAD_SERVER: &str = "Check the server URL in Settings.";
+const GONE: &str = "That upload isn’t there anymore.";
+const NO_TOKEN: &str = "Add your upload token in Settings.";
+const BAD_SERVER: &str = "Check the server URL in Settings.";
 const OTHER_SERVER: &str = "This upload is on a different server.";
 
 /// Where a file came from, which decides what to clean up after it uploads.
@@ -47,36 +47,24 @@ pub enum Origin {
 pub struct Source {
     pub path: PathBuf,
     pub origin: Origin,
-    /// Overrides the displayed file name (captures).
-    pub file_name: Option<String>,
-}
-
-impl Source {
-    pub fn file(path: PathBuf) -> Self {
-        Self { path, origin: Origin::File, file_name: None }
-    }
 }
 
 struct Item {
     upload: Upload,
-    seq: u64,
     path: Option<PathBuf>,
     origin: Origin,
     batch: u64,
-    /// The file as the last upload attempt read it. `Some` once an attempt may have left
-    /// bytes on the server.
-    stamp: Option<Stamp>,
+    last_attempt: Option<Stamp>,
 }
 
 impl Item {
-    /// Part or all of the file may be on the server.
-    fn started(&self) -> bool {
-        self.stamp.is_some() || self.upload.status == Status::Uploading
+    fn may_be_on_server(&self) -> bool {
+        self.last_attempt.is_some() || self.upload.status == Status::Uploading
     }
 }
 
 /// Size and modification time of a file, to notice it changed between attempts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct Stamp {
     size: u64,
     modified: Option<SystemTime>,
@@ -88,68 +76,25 @@ impl Stamp {
     }
 }
 
-/// How an upload attempt begins.
-#[derive(Debug, PartialEq, Eq)]
-enum Start {
-    /// Nothing was sent before.
-    Fresh,
-    /// Continue from whatever an earlier attempt left on the server.
-    Resume,
-    /// The file changed since the last attempt: what the server has must not be reused.
-    Restart,
-}
-
-fn start_for(previous: Option<Stamp>, now: Stamp) -> Start {
-    match previous {
-        None => Start::Fresh,
-        Some(previous) if previous == now => Start::Resume,
-        Some(_) => Start::Restart,
-    }
-}
-
-/// The links of one intake event (a drop, a picker selection, a share), in intake order.
-#[derive(Default)]
-struct Batch {
-    ids: Vec<String>,
-    urls: HashMap<String, String>,
-}
-
-impl Batch {
-    /// Records a finished upload and returns the clipboard text: every finished link, one per line.
-    fn finish(&mut self, id: &str, url: &str) -> String {
-        self.urls.insert(id.to_owned(), url.to_owned());
-        let links: Vec<&str> = self.ids.iter().filter_map(|id| self.urls.get(id)).map(String::as_str).collect();
-        links.join("\n")
-    }
-}
-
 #[derive(Default)]
 pub struct Uploads {
     items: Vec<Item>,
-    batches: HashMap<u64, Batch>,
     counter: u64,
     /// The uploading item and the switch that cancels it.
     current: Option<(String, oneshot::Sender<()>)>,
 }
 
-/// In-flight and failed first, then done; newest first within each group.
-fn order(a: &Item, b: &Item) -> Ordering {
-    let done = |i: &Item| i.upload.status == Status::Done;
-    done(a)
-        .cmp(&done(b))
-        .then(b.upload.created_at.cmp(&a.upload.created_at))
-        .then(b.seq.cmp(&a.seq))
-}
-
 impl Uploads {
     /// Starts from the persisted list (newest first).
     pub fn from_done(done: Vec<Upload>) -> Self {
-        let mut uploads = Self::default();
-        for upload in done.into_iter().rev() {
-            let seq = uploads.next();
-            uploads.items.push(Item { upload, seq, path: None, origin: Origin::File, batch: 0, stamp: None });
+        Self {
+            items: done
+                .into_iter()
+                .rev()
+                .map(|upload| Item { upload, path: None, origin: Origin::File, batch: 0, last_attempt: None })
+                .collect(),
+            ..Self::default()
         }
-        uploads
     }
 
     fn next(&mut self) -> u64 {
@@ -157,9 +102,10 @@ impl Uploads {
         self.counter
     }
 
+    /// In-flight and failed first, then done; newest first within each group.
     fn sorted(&self) -> Vec<&Item> {
-        let mut items: Vec<&Item> = self.items.iter().collect();
-        items.sort_by(|a, b| order(a, b));
+        let mut items: Vec<&Item> = self.items.iter().rev().collect();
+        items.sort_by_key(|i| (i.upload.status == Status::Done, Reverse(i.upload.created_at)));
         items
     }
 
@@ -202,34 +148,28 @@ impl Uploads {
             if upload.status == Status::Queued {
                 queued.push(upload.id.clone());
             }
-            let seq = self.next();
-            self.items.push(Item { upload, seq, path: Some(path), origin, batch, stamp: None });
-        }
-        if !queued.is_empty() {
-            self.batches.insert(batch, Batch { ids: queued.clone(), urls: HashMap::new() });
+            self.items.push(Item { upload, path: Some(path), origin, batch, last_attempt: None });
         }
         queued
     }
 
-    /// Drops batches with nothing left to finish.
-    fn prune_batches(&mut self) {
-        let pending: HashSet<u64> = self
+    /// The clipboard text: every finished link of `batch`, in intake order.
+    fn links(&self, batch: u64) -> String {
+        let links: Vec<&str> = self
             .items
             .iter()
-            .filter(|i| matches!(i.upload.status, Status::Queued | Status::Uploading))
-            .map(|i| i.batch)
+            .filter(|i| i.batch == batch && i.upload.status == Status::Done)
+            .map(|i| i.upload.url.as_str())
             .collect();
-        self.batches.retain(|batch, _| pending.contains(batch));
+        links.join("\n")
     }
 
-    /// Keeps at most `MAX_DONE` finished uploads.
     fn trim_done(&mut self) {
         let keep: HashSet<String> =
             self.done().into_iter().take(store::MAX_DONE).map(|u| u.id).collect();
         self.items.retain(|i| i.upload.status != Status::Done || keep.contains(&i.upload.id));
     }
 
-    /// What to delete once `item` is gone or done.
     fn cleanup_for(&self, path: Option<PathBuf>, origin: &Origin) -> Cleanup {
         match origin {
             Origin::File => Cleanup::None,
@@ -282,6 +222,16 @@ fn open_error(e: &std::io::Error) -> UploadError {
     }
 }
 
+async fn uploadable(path: &Path) -> Result<u64, UploadError> {
+    match tokio::fs::metadata(path).await {
+        Ok(m) if m.is_dir() => Err(unsupported("Folders can’t be uploaded.")),
+        Ok(m) if !m.is_file() => Err(unsupported("Only files can be uploaded.")),
+        Ok(m) if m.len() == 0 => Err(unsupported("This file is empty.")),
+        Ok(m) => Ok(m.len()),
+        Err(e) => Err(open_error(&e)),
+    }
+}
+
 /// A small PNG `data:` URL. It is resent with every `uploads` event while the item is in
 /// flight, so it must stay tiny.
 async fn thumbnail(img: DynamicImage) -> Option<String> {
@@ -313,8 +263,8 @@ async fn add_thumbnail(app: &AppHandle, id: &str) {
     let Some((path, name, size, kind)) = source else { return };
     let scratch = core.cache_dir.join("quicklook");
     let Some(img) = preview::make(&core.previews_dir, &scratch, id, &path, ext_of(&name), size).await else { return };
-    // Cancelled while the preview was made: nothing will remove it now.
-    if core.uploads.lock().unwrap().get(id).is_none() {
+    let cancelled = core.uploads.lock().unwrap().get(id).is_none();
+    if cancelled {
         return preview::remove(&core.previews_dir, id);
     }
     if kind != Kind::Image {
@@ -333,18 +283,17 @@ async fn add_thumbnail(app: &AppHandle, id: &str) {
 }
 
 async fn prepare(source: Source) -> (Upload, PathBuf, Origin) {
-    let Source { path, origin, file_name } = source;
+    let Source { path, origin } = source;
     let id = new_id();
-    let ext = if origin == Origin::Capture { "png".to_owned() } else { sanitize_ext(&path) };
-    let file_name = file_name.unwrap_or_else(|| {
-        path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned())
-    });
-    let (size, error) = match tokio::fs::metadata(&path).await {
-        Ok(m) if m.is_dir() => (0, Some(unsupported("Folders can’t be uploaded."))),
-        Ok(m) if !m.is_file() => (0, Some(unsupported("Only files can be uploaded."))),
-        Ok(m) if m.len() == 0 => (0, Some(unsupported("This file is empty."))),
-        Ok(m) => (m.len(), None),
-        Err(e) => (0, Some(open_error(&e))),
+    let ext = sanitize_ext(&path);
+    let file_name = match origin {
+        // Like macOS names its own screenshots: "Screenshot 2026-10-21 at 14.03.22.png".
+        Origin::Capture => chrono::Local::now().format("Screenshot %Y-%m-%d at %H.%M.%S.png").to_string(),
+        _ => path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned()),
+    };
+    let (size, error) = match uploadable(&path).await {
+        Ok(size) => (size, None),
+        Err(e) => (0, Some(e)),
     };
     let upload = Upload {
         name: format!("{id}.{ext}"),
@@ -362,16 +311,16 @@ async fn prepare(source: Source) -> (Upload, PathBuf, Origin) {
     (upload, path, origin)
 }
 
-pub fn emit_uploads(app: &AppHandle) {
+fn emit_uploads(app: &AppHandle) {
     let list = app.state::<Core>().uploads.lock().unwrap().list();
     let _ = app.emit("uploads", list);
 }
 
 fn persist(app: &AppHandle) {
     let core = app.state::<Core>();
-    let _guard = core.persist.lock().unwrap();
+    let path = core.uploads_path.lock().unwrap();
     let done = core.uploads.lock().unwrap().done();
-    if let Err(e) = store::save_uploads(&core.uploads_path, &done) {
+    if let Err(e) = store::save_uploads(&path, &done) {
         eprintln!("push: couldn’t save uploads.json: {e}");
     }
 }
@@ -406,8 +355,7 @@ struct Job {
     id: String,
     name: String,
     path: PathBuf,
-    /// The file as the previous attempt read it.
-    stamp: Option<Stamp>,
+    last_attempt: Option<Stamp>,
 }
 
 /// Runs queued uploads one at a time, in order.
@@ -421,7 +369,7 @@ pub async fn worker(app: AppHandle, mut jobs: mpsc::UnboundedReceiver<String>) {
             let Some(path) = item.path.clone() else { continue };
             item.upload.status = Status::Uploading;
             item.upload.sent = 0;
-            let job = Job { id: id.clone(), name: item.upload.name.clone(), path, stamp: item.stamp };
+            let job = Job { id: id.clone(), name: item.upload.name.clone(), path, last_attempt: item.last_attempt };
             let upload = item.upload.clone();
             uploads.current = Some((id.clone(), cancel));
             (job, upload)
@@ -476,10 +424,10 @@ async fn run(app: &AppHandle, job: &Job) -> Result<(String, u64), UploadError> {
     }
     let api = Api::new(core.http.clone(), base.clone(), token);
     let stamp = Stamp::of(&meta);
-    let start = start_for(job.stamp, stamp);
-    if start == Start::Restart {
-        // Resuming would splice the old version's bytes into the new one. The old stamp is
-        // kept until this succeeds, so a failed delete is tried again on the next attempt.
+    let resume = job.last_attempt == Some(stamp);
+    let changed = job.last_attempt.is_some() && !resume;
+    if changed {
+        // Resuming would splice the old version's bytes into the new one.
         match api.delete(&job.name).await {
             Ok(204 | 404) => {}
             Ok(401) => return Err(transfer::auth_error()),
@@ -488,11 +436,10 @@ async fn run(app: &AppHandle, job: &Job) -> Result<(String, u64), UploadError> {
         }
     }
     if let Some(item) = core.uploads.lock().unwrap().get_mut(&job.id) {
-        item.stamp = Some(stamp);
+        item.last_attempt = Some(stamp);
     }
     let progress = progress_reporter(app, &job.id, total);
-    let resume = start == Start::Resume;
-    let url = match transfer::send(&api, &mut file, &job.name, total, resume, &POLICY, &progress).await? {
+    let url = match transfer::send(&api, &mut file, &job.name, total, resume, &progress).await? {
         Sent::Url(url) if is_web_url(&url) => url,
         Sent::Url(_) => return Err(UploadError::new(ErrorKind::Server, "The server sent an invalid link.")),
         Sent::Exists => format!("{base}/i/{}", job.name),
@@ -511,11 +458,11 @@ fn finish(app: &AppHandle, id: &str, result: Result<(String, u64), UploadError>)
         match result {
             Ok((url, size)) => {
                 item.upload.status = Status::Done;
-                item.upload.url = url.clone();
+                item.upload.url = url;
                 item.upload.size = size;
                 item.upload.sent = size;
                 item.upload.error = None;
-                done = Some((item.batch, url, item.path.take(), item.origin.clone()));
+                done = Some((item.batch, item.path.take(), item.origin.clone()));
             }
             Err(error) => {
                 item.upload.status = Status::Failed;
@@ -524,12 +471,11 @@ fn finish(app: &AppHandle, id: &str, result: Result<(String, u64), UploadError>)
         }
         let upload = item.upload.clone();
         let mut cleanup = Cleanup::None;
-        if let Some((batch, url, path, origin)) = done {
-            clipboard = Some(uploads.batches.get_mut(&batch).map_or_else(|| url.clone(), |b| b.finish(id, &url)));
+        if let Some((batch, path, origin)) = done {
+            clipboard = Some(uploads.links(batch));
             cleanup = uploads.cleanup_for(path, &origin);
             uploads.trim_done();
         }
-        uploads.prune_batches();
         (upload, clipboard, cleanup)
     };
     if let Some(text) = clipboard {
@@ -547,7 +493,7 @@ fn finish(app: &AppHandle, id: &str, result: Result<(String, u64), UploadError>)
 /// Cancels a queued or uploading item, or dismisses a failed one.
 pub fn cancel(app: &AppHandle, id: &str) -> Result<(), String> {
     let core = app.state::<Core>();
-    let (cleanup, sent) = {
+    let (cleanup, on_server) = {
         let mut uploads = core.uploads.lock().unwrap();
         match uploads.get(id) {
             None => return Err(GONE.into()),
@@ -555,18 +501,15 @@ pub fn cancel(app: &AppHandle, id: &str) -> Result<(), String> {
             Some(_) => {}
         }
         let item = uploads.remove(id).expect("item exists");
-        if uploads.current.as_ref().is_some_and(|(current, _)| current == id)
-            && let Some((_, cancel)) = uploads.current.take()
-        {
+        if let Some((_, cancel)) = uploads.current.take_if(|(current, _)| current == id) {
             let _ = cancel.send(());
         }
-        uploads.prune_batches();
-        let sent = item.started().then(|| item.upload.name.clone());
-        (uploads.cleanup_for(item.path, &item.origin), sent)
+        let on_server = item.may_be_on_server().then(|| item.upload.name.clone());
+        (uploads.cleanup_for(item.path, &item.origin), on_server)
     };
     cleanup.run();
     preview::remove(&core.previews_dir, id);
-    if let Some(name) = sent {
+    if let Some(name) = on_server {
         discard(app, name);
     }
     emit_uploads(app);
@@ -591,7 +534,7 @@ fn discard(app: &AppHandle, name: String) {
 }
 
 /// Queues a failed item again (same id). The next attempt resumes whatever reached the
-/// server, or starts over if the file changed since (see `start_for`).
+/// server, or starts over if the file changed.
 pub async fn retry(app: &AppHandle, id: &str) -> Result<(), String> {
     let core = app.state::<Core>();
     let path = {
@@ -602,11 +545,7 @@ pub async fn retry(app: &AppHandle, id: &str) -> Result<(), String> {
         }
         item.path.clone().ok_or("The file is no longer there.")?
     };
-    let size = match tokio::fs::metadata(&path).await {
-        Ok(m) if m.is_file() && m.len() > 0 => m.len(),
-        Ok(_) => return Err("This file can’t be uploaded.".into()),
-        Err(_) => return Err("The file is no longer there.".into()),
-    };
+    let size = uploadable(&path).await.map_err(|e| e.message)?;
     {
         let mut uploads = core.uploads.lock().unwrap();
         let batch = uploads.next();
@@ -616,7 +555,6 @@ pub async fn retry(app: &AppHandle, id: &str) -> Result<(), String> {
         item.upload.sent = 0;
         item.upload.size = size;
         item.batch = batch;
-        uploads.batches.insert(batch, Batch { ids: vec![id.to_owned()], urls: HashMap::new() });
     }
     let _ = core.jobs.send(id.to_owned());
     emit_uploads(app);
@@ -671,7 +609,7 @@ pub fn link(app: &AppHandle, id: &str) -> Result<String, String> {
     let core = app.state::<Core>();
     let uploads = core.uploads.lock().unwrap();
     let item = uploads.get(id).ok_or(GONE)?;
-    if item.upload.status != Status::Done || !is_web_url(&item.upload.url) {
+    if item.upload.status != Status::Done {
         return Err("This upload isn’t finished yet.".into());
     }
     Ok(item.upload.url.clone())

@@ -9,7 +9,6 @@ use tokio::process::Command;
 
 use super::{Shot, failure, has_image};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Backend {
     Spectacle,
     SlurpGrim,
@@ -19,11 +18,8 @@ enum Backend {
 }
 
 pub(super) async fn capture(out: &Path) -> Shot {
-    let desktop = env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-    let wayland = env::var_os("WAYLAND_DISPLAY").is_some()
-        || env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland");
     // Looking through PATH touches the disk, so keep it off the async runtime.
-    let backend = tauri::async_runtime::spawn_blocking(move || backend(&desktop, wayland, on_path))
+    let backend = tauri::async_runtime::spawn_blocking(backend)
         .await
         .unwrap_or(Backend::Portal);
     match backend {
@@ -35,27 +31,22 @@ pub(super) async fn capture(out: &Path) -> Shot {
     }
 }
 
-pub(super) fn open_permission_settings() {}
-
-pub(super) fn shortcut_supported() -> bool {
-    // Global shortcuts go through X11; on Wayland they register fine and then never fire.
-    env::var_os("WAYLAND_DISPLAY").is_none()
-}
-
-/// `desktop` is `XDG_CURRENT_DESKTOP`, a colon-separated list such as "ubuntu:GNOME".
-fn backend(desktop: &str, wayland: bool, installed: impl Fn(&str) -> bool) -> Backend {
+fn backend() -> Backend {
+    // A colon-separated list such as "ubuntu:GNOME".
+    let desktop = env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+    let wayland = super::wayland();
     let is = |name: &str| desktop.split(':').any(|d| d.eq_ignore_ascii_case(name));
     let (gnome, kde) = (is("GNOME"), is("KDE"));
-    if kde && installed("spectacle") {
+    if kde && on_path("spectacle") {
         // The KDE portal has no region mode.
         Backend::Spectacle
-    } else if wayland && !gnome && !kde && installed("slurp") && installed("grim") {
+    } else if wayland && !gnome && !kde && on_path("slurp") && on_path("grim") {
         // wlroots compositors (Sway, Hyprland, river, niri, labwc). Their portals run these anyway,
         // with worse defaults (a shared /tmp/out.png, or a silent full-screen shot without slurp).
         Backend::SlurpGrim
-    } else if !wayland && !gnome && installed("maim") {
+    } else if !wayland && !gnome && on_path("maim") {
         Backend::Maim
-    } else if !wayland && !gnome && installed("scrot") {
+    } else if !wayland && !gnome && on_path("scrot") {
         Backend::Scrot
     } else {
         // GNOME 46+ opens its own screenshot UI here.
@@ -167,13 +158,15 @@ async fn portal(out: &Path) -> Shot {
     use ashpd::desktop::screenshot::Screenshot;
 
     let request = Screenshot::request().interactive(true).modal(false);
-    let uri = match request.send().await.and_then(|r| r.response()) {
-        Ok(screenshot) => screenshot.uri().as_str().to_owned(),
+    let source = match request.send().await.and_then(|r| r.response()) {
+        Ok(shot) => tauri::Url::parse(shot.uri().as_str())
+            .ok()
+            .and_then(|u| u.to_file_path().ok()),
         // GNOME reports a user cancel as Other, not Cancelled.
         Err(ashpd::Error::Response(_)) => return Shot::Cancelled,
         Err(e) => return Shot::Failed(format!("The screenshot portal failed: {e}")),
     };
-    let Some(source) = file_path(&uri) else {
+    let Some(source) = source else {
         return Shot::Failed("The screenshot portal didn’t return a local file.".into());
     };
     // Copy, never move: on GNOME the original is the user's own ~/Pictures/Screenshots history,
@@ -183,9 +176,4 @@ async fn portal(out: &Path) -> Shot {
         Ok(_) => Shot::Cancelled,
         Err(e) => Shot::Failed(format!("Couldn’t copy the screenshot: {e}")),
     }
-}
-
-/// Turns a `file://` URI (percent-encoded) into a path.
-fn file_path(uri: &str) -> Option<std::path::PathBuf> {
-    url::Url::parse(uri).ok()?.to_file_path().ok()
 }

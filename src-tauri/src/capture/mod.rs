@@ -2,8 +2,6 @@
 //! which writes a PNG to exactly `out`; this module owns the folder, the file names and cleanup.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -18,7 +16,6 @@ mod windows;
 #[cfg(windows)]
 use windows as platform;
 
-#[derive(Debug, PartialEq, Eq)]
 pub enum Shot {
     /// A non-empty PNG inside the capture folder. The caller owns it (and deletes it after upload).
     Done(PathBuf),
@@ -44,18 +41,15 @@ pub async fn capture_region(dir: &Path) -> Shot {
     shot
 }
 
-/// macOS: open System Settings > Screen & System Audio Recording. Elsewhere: no-op.
-pub fn open_permission_settings() {
-    platform::open_permission_settings();
-}
-
-/// false on Linux when WAYLAND_DISPLAY is set.
-pub fn shortcut_supported() -> bool {
-    platform::shortcut_supported()
+/// A Wayland session, including one where Push was started under XWayland without
+/// WAYLAND_DISPLAY.
+pub fn wayland() -> bool {
+    std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland")
 }
 
 /// Creates `dir` (owner-only: captures can contain anything on screen; on Windows the per-user
-/// cache folder already is) and returns an unused PNG path in it.
+/// cache folder already is) and returns a fresh PNG path in it.
 async fn new_capture_path(dir: &Path) -> std::io::Result<PathBuf> {
     let mut builder = tokio::fs::DirBuilder::new();
     builder.recursive(true);
@@ -67,17 +61,7 @@ async fn new_capture_path(dir: &Path) -> std::io::Result<PathBuf> {
         use std::os::unix::fs::PermissionsExt;
         tokio::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).await?;
     }
-    static SEQ: AtomicU32 = AtomicU32::new(0);
-    let ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis());
-    loop {
-        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-        let path = dir.join(format!("capture-{ms}-{seq}.png"));
-        if !tokio::fs::try_exists(&path).await? {
-            return Ok(path);
-        }
-    }
+    Ok(dir.join(format!("capture-{}.png", crate::model::new_id())))
 }
 
 /// True if `path` is a non-empty regular file.

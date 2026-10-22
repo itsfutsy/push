@@ -10,7 +10,6 @@ use tauri::{AppHandle, Manager, Url};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::capture::{self, Shot};
-use crate::model::screenshot_name;
 use crate::queue::{self, Origin, Source};
 use crate::{Core, windows};
 
@@ -47,18 +46,20 @@ pub fn drain_early(app: &AppHandle) {
 
 /// `true` when launched to stay in the background: for a capture hotkey bound to
 /// `push --capture`, or as a login item when the tray icon is there to reach Push.
-pub fn launched_hidden(args: &[String], has_tray: bool) -> bool {
-    args.iter().any(|a| a == "--capture" || (a == "--autostart" && has_tray))
+pub fn launched_hidden(args: &[String], tray_visible: bool) -> bool {
+    args.iter().any(|a| a == "--capture" || (a == "--autostart" && tray_visible))
 }
 
-/// Deletes inbox folders older than `max_age`. The Share extension's copies are removed after
+const INBOX_MAX_AGE: Duration = Duration::from_secs(60 * 60);
+
+/// Deletes inbox folders older than an hour. The Share extension's copies are removed after
 /// they upload or are dismissed; failed rows don't survive a restart, so anything this old is
 /// left over. Newer ones may belong to a share that is launching Push right now.
-pub fn prune_inbox(inbox: &Path, max_age: Duration) {
+pub fn prune_inbox(inbox: &Path) {
     let Ok(entries) = std::fs::read_dir(inbox) else { return };
     for entry in entries.flatten() {
         let Ok(meta) = entry.metadata() else { continue };
-        if !meta.modified().is_ok_and(|t| t.elapsed().is_ok_and(|age| age > max_age)) {
+        if !meta.modified().is_ok_and(|t| t.elapsed().is_ok_and(|age| age > INBOX_MAX_AGE)) {
             continue;
         }
         let removed =
@@ -140,8 +141,8 @@ fn add(app: &AppHandle, paths: Vec<PathBuf>, inbox_ids: Vec<String>) {
         let mut sources: Vec<Source> = paths
             .into_iter()
             .map(|path| match inbox_folder_of(&path, &inbox) {
-                Some(dir) => Source { path, origin: Origin::Inbox(dir), file_name: None },
-                None => Source::file(path),
+                Some(dir) => Source { path, origin: Origin::Inbox(dir) },
+                None => Source { path, origin: Origin::File },
             })
             .collect();
         for id in inbox_ids {
@@ -216,7 +217,7 @@ fn inbox_sources(inbox: &Path, id: &str) -> Vec<Source> {
     {
         eprintln!("push: couldn’t remove an empty inbox folder: {e}");
     }
-    files.into_iter().map(|path| Source { path, origin: Origin::Inbox(dir.clone()), file_name: None }).collect()
+    files.into_iter().map(|path| Source { path, origin: Origin::Inbox(dir.clone()) }).collect()
 }
 
 /// `inbox/<id>` if `path` is a file the Share extension copied there.
@@ -254,10 +255,7 @@ pub fn capture(app: &AppHandle) {
             windows::capture_ended(&app);
         }
         match shot {
-            Shot::Done(path) => {
-                let name = screenshot_name(chrono::Local::now());
-                queue::intake(&app, vec![Source { path, origin: Origin::Capture, file_name: Some(name) }]).await;
-            }
+            Shot::Done(path) => queue::intake(&app, vec![Source { path, origin: Origin::Capture }]).await,
             Shot::Cancelled => {}
             Shot::NoPermission => windows::permission_needed(&app),
             Shot::Failed(reason) => windows::capture_failed(&reason),
