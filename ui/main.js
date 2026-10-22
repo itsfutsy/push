@@ -246,6 +246,7 @@ function buildRow(r) {
   r.name = h('span', { class: 'name' });
   r.nameKey = null;
   r.meta = h('span', { class: 'meta num' });
+  r.metaKey = null;
   const parts = [];
 
   if (r.mode === 'done') {
