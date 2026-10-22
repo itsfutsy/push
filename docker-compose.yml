@@ -12,6 +12,9 @@ services:
   push:
     image: ghcr.io/itsfutsy/push:latest
     restart: unless-stopped
+    # Docker's default log driver never rotates, so a flood of junk requests could fill the disk.
+    logging:
+      driver: local
     environment:
       PUSH_TOKEN: ${PUSH_TOKEN:?set PUSH_TOKEN in .env (openssl rand -hex 32)}
       PUSH_PUBLIC_URL: https://${PUSH_DOMAIN:?set PUSH_DOMAIN in .env}
@@ -22,6 +25,8 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging:
+      driver: local
     command: caddy reverse-proxy --from ${PUSH_DOMAIN} --to push:3000
     ports:
       - "80:80"
