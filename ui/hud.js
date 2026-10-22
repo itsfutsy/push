@@ -1,11 +1,10 @@
 // HUD: a small always-on-top panel at the bottom-right of the screen. It owns its lifecycle:
 // success dismisses itself after 3 s (paused while hovered); failures and the permission notice stay.
 import {
-  invoke, listen, setPlatform, icon, kindIcon, formatProgress, percent, shortUrl, hostOf, setRing, fadeIn, motion,
-  reducedMotion, announce, fitMiddle, NO_TOKEN,
+  $, invoke, listen, setPlatform, icon, kindIcon, formatProgress, percent, shortUrl, failureTitle, setRing, fadeIn, motion,
+  reducedMotion, announce, fitMiddle, isActive,
 } from './lib.js';
 
-const $ = (id) => document.getElementById(id);
 const root = $('hud');
 
 let shown = null;        // { kind: 'upload', upload } | { kind: 'permission' } while visible
@@ -13,27 +12,27 @@ let thumb = null;        // local data URL of the shown upload, kept after it fi
 let serverUrl = '';
 let timer = 0;
 
-const isActive = (u) => u.status === 'queued' || u.status === 'uploading';
+const openMain = (view) => () => { invoke('show_main', { view }); dismiss(); };
 
 function view() {
   if (shown.kind === 'permission') {
-    return { state: 'permission', title: 'Allow screen recording', sub: 'Click to open System Settings', glyph: 'push' };
+    return { state: 'permission', title: 'Allow screen recording', sub: 'Click to open System Settings', glyph: 'push',
+      click: () => { invoke('open_permission_settings'); dismiss(); } };
   }
   const u = shown.upload;
   if (isActive(u)) {
     // The ring says "uploading"; the title names the file, middle-truncated like Finder.
-    return { state: 'uploading', title: u.fileName, sub: u.status === 'uploading' ? formatProgress(u.sent, u.size) : 'Waiting…' };
+    return { state: 'uploading', title: u.fileName, sub: u.status === 'uploading' ? formatProgress(u.sent, u.size) : 'Waiting…',
+      click: openMain('main') };
   }
-  if (u.status === 'done') return { state: 'done', title: 'Link copied', sub: shortUrl(u.url) };
+  if (u.status === 'done') {
+    return { state: 'done', title: 'Link copied', sub: shortUrl(u.url), click: () => { invoke('open_link', { id: u.id }); dismiss(); } };
+  }
+  const title = failureTitle(u.error, serverUrl);
   switch (u.error?.kind) {
-    case 'auth': {
-      const title = u.error.message === NO_TOKEN ? 'Add your upload token' : 'Upload token not accepted';
-      return { state: 'failed', title, sub: 'Click to open Settings' };
-    }
-    case 'network': return { state: 'failed', title: `Can’t reach ${hostOf(serverUrl) || 'the server'}`, sub: 'Click to try again' };
-    case 'unsupported': return { state: 'failed', title: 'Can’t upload this item', sub: u.error.message };
-    case 'missing': return { state: 'failed', title: 'File not found', sub: u.error.message };
-    default: return { state: 'failed', title: 'Upload failed', sub: 'Click to try again' };
+    case 'auth': return { state: 'failed', title, sub: 'Click to open Settings', click: openMain('settings') };
+    case 'unsupported': case 'missing': return { state: 'failed', title, sub: u.error.message, click: dismiss };
+    default: return { state: 'failed', title, sub: 'Click to try again', click: () => invoke('retry_upload', { id: u.id }).catch(dismiss) };
   }
 }
 
@@ -145,36 +144,13 @@ function onUploads(list) {
 function onProgress({ id, sent, total }) {
   if (shown?.kind !== 'upload' || shown.upload.id !== id) return;
   shown.upload.sent = sent;
-  if (total) shown.upload.size = total;
+  shown.upload.size = total;
   if (shown.upload.status === 'queued') shown.upload.status = 'uploading';
   render();
 }
 
-function onClick() {
-  if (!shown) return;
-  if (shown.kind === 'permission') {
-    invoke('open_permission_settings');
-    return dismiss();
-  }
-  const u = shown.upload;
-  if (u.status === 'done') {
-    invoke('open_link', { id: u.id });
-    dismiss();
-  } else if (u.status === 'failed' && u.error?.kind === 'auth') {
-    invoke('show_main', { view: 'settings' });
-    dismiss();
-  } else if (u.status === 'failed' && (u.error?.kind === 'network' || u.error?.kind === 'server')) {
-    invoke('retry_upload', { id: u.id }).catch(() => dismiss());
-  } else if (u.status === 'failed') {
-    dismiss();
-  } else {
-    invoke('show_main', { view: 'main' });
-    dismiss();
-  }
-}
-
 async function init() {
-  $('hud-hit').addEventListener('click', onClick);
+  $('hud-hit').addEventListener('click', () => shown && last.click());
   $('hud-close').addEventListener('click', dismiss);
   await Promise.all([
     listen('hud', show),

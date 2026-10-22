@@ -1,25 +1,10 @@
 // Main window: drop zone, recent uploads and the settings view. All work happens in Rust;
 // this renders state from get_info and the uploads / upload-progress / settings / navigate events.
 import {
-  invoke, listen, onDragDrop, setPlatform, isMac, isWindows, icon, kindIcon, formatSize, formatProgress, percent,
-  relativeTime, shortUrl, hostOf, formatShortcut, formatModifiers, BOTH_COMMANDS, announce, setRing, fadeIn, motion, reducedMotion, fitMiddle,
+  $, h, invoke, listen, onDragDrop, setPlatform, isMac, isWindows, cmdKey, isActive, icon, kindIcon, formatSize, formatProgress, percent,
+  relativeTime, shortUrl, failureTitle, formatShortcut, formatModifiers, BOTH_COMMANDS, announce, setRing, fadeIn, motion, reducedMotion, fitMiddle,
 } from './lib.js';
 
-const $ = (id) => document.getElementById(id);
-
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v == null || v === false) continue;
-    if (k === 'class') el.className = v;
-    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? '' : v);
-  }
-  el.append(...children.filter((c) => c != null && c !== false));
-  return el;
-}
-
-const isActive = (u) => u.status === 'queued' || u.status === 'uploading';
 const RETRYABLE = new Set(['auth', 'network', 'server']);
 
 const state = {
@@ -32,7 +17,6 @@ const state = {
   errorId: null,     // the failure the drop zone reports
   confirmId: null,   // row asking "Delete …?"
 };
-const lastStatus = new Map(); // id -> status, to spot transitions
 const thumbs = new Map();     // id -> local data URL, kept so a finished row doesn't flash while the remote image loads
 
 const configured = () => state.info.hasToken && !!state.info.settings.serverUrl;
@@ -40,19 +24,19 @@ const configured = () => state.info.hasToken && !!state.info.settings.serverUrl;
 // ---------------------------------------------------------------- uploads
 
 function applyUploads(list, initial = false) {
+  const before = new Map(state.uploads.map((u) => [u.id, u.status]));
   // A new attempt clears the old error, then a failure among the new items reports itself.
-  if (!initial && list.some((u) => !lastStatus.has(u.id))) state.errorId = null;
+  if (!initial && list.some((u) => !before.has(u.id))) state.errorId = null;
   for (const u of list) {
-    const before = lastStatus.get(u.id);
+    const was = before.get(u.id);
     if (!initial) {
-      if (u.status === 'done' && before && before !== 'done') succeed(u);
-      if (u.status === 'failed' && before !== 'failed') state.errorId = u.id;
+      if (u.status === 'done' && was && was !== 'done') succeed(u);
+      if (u.status === 'failed' && was !== 'failed') state.errorId = u.id;
     }
     if (u.thumb) thumbs.set(u.id, u.thumb);
   }
-  lastStatus.clear();
-  for (const u of list) lastStatus.set(u.id, u.status);
-  for (const id of thumbs.keys()) if (!lastStatus.has(id)) thumbs.delete(id);
+  const ids = new Set(list.map((u) => u.id));
+  for (const id of thumbs.keys()) if (!ids.has(id)) thumbs.delete(id);
   if (initial) state.errorId = list.find((u) => u.status === 'failed')?.id ?? null;
   state.uploads = list;
   renderZone();
@@ -69,7 +53,7 @@ function onProgress({ id, sent, total }) {
   const u = state.uploads.find((x) => x.id === id);
   if (!u) return;
   u.sent = sent;
-  if (total) u.size = total;
+  u.size = total;
   if (u.status === 'queued') u.status = 'uploading';
   const r = rows.get(id);
   if (r) updateRowText(r);
@@ -80,32 +64,30 @@ function onProgress({ id, sent, total }) {
 
 let zone = { state: null };
 
-function currentUpload() {
-  const active = state.uploads.filter(isActive);
-  // The list is newest first and the queue is FIFO, so the oldest queued item goes next.
-  return { active, current: active.find((u) => u.status === 'uploading') ?? active.at(-1) };
-}
+const openSettings = { action: 'Open Settings', run: () => showView('settings') };
 
 function zoneView() {
   if (state.dragging) {
     return { state: 'over', title: 'Release to upload',
       sub: state.dragCount > 1 ? 'The links are copied when they’re done' : 'The link is copied when it’s done' };
   }
-  const { active, current } = currentUpload();
+  const active = state.uploads.filter(isActive);
+  const oldest = active.at(-1);
+  const current = active.find((u) => u.status === 'uploading') ?? oldest;
   if (current) {
     return { state: 'uploading', title: active.length > 1 ? `Uploading ${active.length} files…` : 'Uploading…',
-      current, action: 'Cancel', actionLabel: `Cancel uploading ${current.fileName}` };
+      current, action: 'Cancel', actionLabel: `Cancel uploading ${current.fileName}`, run: () => invoke('cancel_upload', { id: current.id }) };
   }
   if (state.success && Date.now() < state.success.until) {
     return { state: 'success', title: 'Link copied', sub: shortUrl(state.success.url) };
   }
   if (!configured()) {
     if (!state.info.hasToken && !state.info.settings.serverUrl) {
-      return { state: 'setup', title: 'Connect your server', sub: 'Add its address and your upload token.', action: 'Open Settings' };
+      return { state: 'setup', title: 'Connect your server', sub: 'Add its address and your upload token.', ...openSettings };
     }
     return state.info.hasToken
-      ? { state: 'setup', title: 'Add your server', sub: 'Push needs its address before it can upload.', action: 'Open Settings' }
-      : { state: 'setup', title: 'Add your upload token', sub: 'Push needs it before it can upload.', action: 'Open Settings' };
+      ? { state: 'setup', title: 'Add your server', sub: 'Push needs its address before it can upload.', ...openSettings }
+      : { state: 'setup', title: 'Add your upload token', sub: 'Push needs it before it can upload.', ...openSettings };
   }
   const failed = state.uploads.find((u) => u.id === state.errorId && u.status === 'failed');
   if (failed) return errorView(failed);
@@ -113,19 +95,14 @@ function zoneView() {
 }
 
 function errorView(u) {
-  const host = hostOf(state.info.settings.serverUrl) || 'the server';
-  const base = { state: 'error', failed: u };
+  const title = failureTitle(u.error, state.info.settings.serverUrl);
+  const retry = { action: 'Try Again', run: () => invoke('retry_upload', { id: u.id }).catch((e) => { $('zone-sub').textContent = String(e); }) };
+  const dismiss = { action: 'OK', run: () => invoke('cancel_upload', { id: u.id }) };
   switch (u.error?.kind) {
-    case 'auth':
-      return { ...base, title: 'Upload token not accepted', sub: 'Check the token in Settings.', action: 'Open Settings' };
-    case 'network':
-      return { ...base, title: `Can’t reach ${host}`, sub: 'Check your connection and try again.', action: 'Try Again' };
-    case 'unsupported':
-      return { ...base, title: 'Can’t upload this item', sub: u.error.message, action: 'OK' };
-    case 'missing':
-      return { ...base, title: 'File not found', sub: u.error.message, action: 'OK' };
-    default:
-      return { ...base, title: 'Upload failed', sub: u.error?.message || 'Something went wrong.', action: 'Try Again' };
+    case 'auth': return { state: 'error', title, sub: 'Check the token in Settings.', ...openSettings };
+    case 'network': return { state: 'error', title, sub: 'Check your connection and try again.', ...retry };
+    case 'unsupported': case 'missing': return { state: 'error', title, sub: u.error.message, ...dismiss };
+    default: return { state: 'error', title, sub: u.error?.message || 'Something went wrong.', ...retry };
   }
 }
 
@@ -177,21 +154,9 @@ function renderHint(el) {
   }
 }
 
-function onZoneAction() {
-  const v = zone;
-  if (v.action === 'Cancel') invoke('cancel_upload', { id: v.current.id });
-  else if (v.action === 'Open Settings') showView('settings');
-  else if (v.action === 'Try Again') invoke('retry_upload', { id: v.failed.id }).catch(showZoneError);
-  else if (v.action === 'OK') invoke('cancel_upload', { id: v.failed.id });
-}
-
-function showZoneError(e) {
-  $('zone-sub').textContent = String(e);
-}
-
 function onDrag(p) {
   if (p.type === 'enter') {
-    state.dragCount = p.paths?.length ?? 1;
+    state.dragCount = p.paths.length;
     if (state.view === 'settings') showView('main');
   }
   const dragging = p.type === 'enter' || p.type === 'over';
@@ -253,7 +218,7 @@ function leave(el) {
 }
 
 function rowMode(r) {
-  if (r.confirm) return 'confirm';
+  if (state.confirmId === r.id) return 'confirm';
   return isActive(r.u) ? 'active' : r.u.status;
 }
 
@@ -274,6 +239,7 @@ function buildRow(r) {
   r.name = h('span', { class: 'name' });
   r.nameKey = null;
   r.meta = h('span', { class: 'meta num' });
+  r.metaKey = null;
   const parts = [];
 
   if (r.mode === 'done') {
@@ -292,7 +258,7 @@ function buildRow(r) {
       iconButton('link', 'Copy Link', () => copyLink(r)),
       iconButton('trash-2', 'Delete', () => askDelete(r), 'del'));
   } else if (r.mode === 'active') {
-    r.ring = ringSvg();
+    r.ring = $('row-ring').content.firstElementChild.cloneNode(true);
     trail = h('span', { class: 'trail' },
       h('button', { class: 'icon-btn stop', type: 'button', 'aria-label': `Cancel uploading ${u.fileName}`, title: 'Cancel Upload',
         onclick: () => invoke('cancel_upload', { id: r.id }) }, r.ring));
@@ -314,22 +280,6 @@ function iconButton(name, label, onclick, cls = '') {
   return h('button', { class: `icon-btn ${cls}`.trim(), type: 'button', 'aria-label': label, title: label, onclick }, icon(name));
 }
 
-function ringSvg() {
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('class', 'ring');
-  svg.setAttribute('viewBox', '0 0 20 20');
-  svg.setAttribute('aria-hidden', 'true');
-  for (const cls of ['track', 'bar']) {
-    const c = document.createElementNS(ns, 'circle');
-    c.setAttribute('class', cls);
-    c.setAttribute('cx', '10'); c.setAttribute('cy', '10'); c.setAttribute('r', '9');
-    if (cls === 'bar') c.setAttribute('pathLength', '100');
-    svg.append(c);
-  }
-  return svg;
-}
-
 function updateRowText(r, fade = false) {
   const { u } = r;
   if (r.mode === 'confirm') {
@@ -345,9 +295,8 @@ function updateRowText(r, fade = false) {
   }
   let meta;
   if (r.mode === 'done') {
-    if (r.copied) meta = [icon('check', 'ok'), h('span', {}, 'Link copied')];
-    else if (r.error) meta = [icon('circle-alert', 'bad'), h('span', {}, r.error)];
-    else meta = [`${formatSize(u.size)} · ${relativeTime(u.createdAt)}`];
+    meta = r.flash ? [icon(r.flash.icon, r.flash.tone), h('span', {}, r.flash.text)]
+      : [`${formatSize(u.size)} · ${relativeTime(u.createdAt)}`];
   } else if (r.mode === 'active') {
     const uploading = u.status === 'uploading';
     meta = [uploading ? formatProgress(u.sent, u.size) : 'Waiting…'];
@@ -355,7 +304,7 @@ function updateRowText(r, fade = false) {
   } else {
     meta = [icon('circle-alert', 'warn'), h('span', {}, u.error?.message || 'Upload failed')];
   }
-  const key = meta.map((m) => (typeof m === 'string' ? m : m.textContent)).join('|') + r.copied + r.error;
+  const key = meta.map((m) => (typeof m === 'string' ? m : m.textContent)).join('|');
   if (key === r.metaKey) return;
   r.metaKey = key;
   r.meta.replaceChildren(...meta);
@@ -405,21 +354,19 @@ async function copyLink(r) {
   } catch (e) {
     return flashRowError(r, e);
   }
-  clearTimeout(r.timer);
-  r.copied = true;
-  r.error = null;
-  updateRowText(r, true);
-  announce('Link copied');
-  r.timer = setTimeout(() => { r.copied = false; updateRowText(r, true); }, 1500);
+  flash(r, { icon: 'check', tone: 'ok', text: 'Link copied' }, 1500);
 }
 
 function flashRowError(r, e) {
+  flash(r, { icon: 'circle-alert', tone: 'bad', text: String(e) }, 4000);
+}
+
+function flash(r, note, ms) {
   clearTimeout(r.timer);
-  r.copied = false;
-  r.error = String(e);
+  r.flash = note;
   updateRowText(r, true);
-  announce(r.error);
-  r.timer = setTimeout(() => { r.error = null; updateRowText(r, true); }, 4000);
+  announce(note.text);
+  r.timer = setTimeout(() => { r.flash = null; updateRowText(r, true); }, ms);
 }
 
 async function retry(r) {
@@ -429,7 +376,6 @@ async function retry(r) {
 function askDelete(r) {
   closeConfirm();
   state.confirmId = r.id;
-  r.confirm = true;
   renderRow(r);
   r.el.querySelector('.cancel').focus();
 }
@@ -437,9 +383,7 @@ function askDelete(r) {
 function closeConfirm() {
   const r = rows.get(state.confirmId);
   state.confirmId = null;
-  if (!r || !r.confirm) return;
-  r.confirm = false;
-  renderRow(r);
+  if (r) renderRow(r);
 }
 
 async function deleteUpload(r) {
@@ -448,7 +392,6 @@ async function deleteUpload(r) {
     await invoke('delete_upload', { id: r.id }); // the uploads event removes the row
   } catch (e) {
     if (state.confirmId === r.id) state.confirmId = null;
-    r.confirm = false;
     renderRow(r);
     flashRowError(r, e);
   }
@@ -470,7 +413,8 @@ async function showView(next) {
   if (next === state.view) return;
   if (state.view === 'settings') {
     if (recording) await stopRecording();
-    if (!(await commitFields())) return; // keep Settings open to show what's wrong
+    const saved = await Promise.all([commitUrl(), commitToken()]);
+    if (!saved.every(Boolean)) return; // keep Settings open to show what's wrong
   }
   closeConfirm();
   const from = $(state.view), to = $(next);
@@ -557,11 +501,6 @@ async function commitToken() {
     setFieldError('token', String(e));
     return false;
   }
-}
-
-async function commitFields() {
-  const [a, b] = await Promise.all([commitUrl(), commitToken()]);
-  return a && b;
 }
 
 let checkSeq = 0;
@@ -659,9 +598,8 @@ function onRecorderKey(e) {
 }
 
 async function saveShortcut(accelerator) {
-  const wasRecording = recording;
   saving = true;
-  if (wasRecording) await invoke('pause_shortcut', { paused: false }).catch(() => {});
+  if (recording) await invoke('pause_shortcut', { paused: false }).catch(() => {});
   try {
     state.info.settings = await invoke('set_shortcut', { accelerator });
     recording = false;
@@ -693,13 +631,13 @@ async function toggleLogin() {
 // ---------------------------------------------------------------- input
 
 function onKey(e) {
-  const mod = isMac() ? e.metaKey : e.ctrlKey;
+  const mod = cmdKey(e);
   if (mod && e.key === ',') { e.preventDefault(); showView('settings'); return; }
   if (state.view === 'main') {
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); invoke('pick_files'); }
     else if (e.key === 'Escape') {
       if (state.confirmId) closeConfirm();
-      else if (zone.state === 'uploading') invoke('cancel_upload', { id: zone.current.id });
+      else if (zone.state === 'uploading') zone.run();
     }
     return;
   }
@@ -719,7 +657,7 @@ function wire() {
   $('show-all').addEventListener('click', () => invoke('show_library'));
   $('done').addEventListener('click', () => showView('main'));
   $('zone-hit').addEventListener('click', () => (zone.state === 'setup' ? showView('settings') : invoke('pick_files')));
-  $('zone-action').addEventListener('click', onZoneAction);
+  $('zone-action').addEventListener('click', () => zone.run());
   $('list').addEventListener('scroll', updateFades, { passive: true });
   // Refit middle-truncated names when the list's width changes (shown again, scroll bar style).
   new ResizeObserver(() => {

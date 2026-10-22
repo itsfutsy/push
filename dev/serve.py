@@ -5,13 +5,12 @@ usage: python3 dev/serve.py [port]   (default 5174), then open http://127.0.0.1:
 """
 import functools
 import http.server
+import json
 import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-       "img-src 'self' https: http://localhost:* http://127.0.0.1:* data: preview:; media-src https: http://localhost:* http://127.0.0.1:*; "
-       "connect-src ipc: http://ipc.localhost")
+CSP = json.load(open(os.path.join(ROOT, "src-tauri", "tauri.conf.json")))["app"]["security"]["csp"]
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
