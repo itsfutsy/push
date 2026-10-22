@@ -7,8 +7,6 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, Short
 use crate::command_keys;
 use crate::{Core, intake};
 
-pub const IN_USE: &str = "That shortcut is in use. Try another.";
-
 /// Global shortcuts go through X11; on Wayland they register fine and then never fire.
 pub fn supported() -> bool {
     !cfg!(target_os = "linux") || std::env::var_os("WAYLAND_DISPLAY").is_none()
@@ -46,7 +44,7 @@ fn register(app: &AppHandle, hotkey: Hotkey) -> Result<(), String> {
                     intake::capture(app);
                 }
             })
-            .map_err(|_| IN_USE.to_owned()),
+            .map_err(|_| "That shortcut is in use. Try another.".to_owned()),
         #[cfg(target_os = "macos")]
         Hotkey::BothCommands => command_keys::watch(app),
     }

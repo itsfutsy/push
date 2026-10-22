@@ -14,7 +14,7 @@ use crate::intake;
 /// The saved setting for this shortcut. Not a real accelerator: `shortcut::parse` special-cases it.
 pub const ACCELERATOR: &str = "LeftCommand+RightCommand";
 /// macOS only applies an Input Monitoring grant to a new process.
-pub const NO_PERMISSION: &str =
+const NO_PERMISSION: &str =
     "Allow Push in System Settings > Privacy & Security > Input Monitoring, then quit and reopen Push and record it again.";
 const UNAVAILABLE: &str = "Couldn’t watch the Command keys. Quit and reopen Push, then try again.";
 
