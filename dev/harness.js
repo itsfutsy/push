@@ -10,7 +10,13 @@ const shot = q.has('shot');
 const page = scenario.page ?? 'main';
 const linux = scenario.info?.platform === 'linux';
 
-const mock = createMock({ scenario, log: (...a) => q.has('log') && console.debug('[mock]', ...a) });
+const win = document.getElementById('win');
+const mock = createMock({
+  scenario,
+  log: (...a) => q.has('log') && console.debug('[mock]', ...a),
+  onHudDismiss: () => win.classList.add('dismissed'),
+  hovered: () => win.matches(':hover'),
+});
 window.__PUSH_DEV_TAURI__ = mock.api;
 window.mock = mock; // for poking at it from the console
 
@@ -19,10 +25,7 @@ root.classList.toggle('shot', shot);
 root.dataset.page = page;
 root.classList.toggle('linux', linux);
 
-const win = document.getElementById('win');
 const frame = document.getElementById('frame');
-mock.hooks.onHudDismiss = () => win.classList.add('dismissed');
-mock.hooks.hovered = () => win.matches(':hover');
 
 frame.src = `../ui/${{ hud: 'hud', library: 'library' }[page] ?? 'index'}.html`;
 frame.addEventListener('load', async () => {
