@@ -1,7 +1,7 @@
 # Push server. Build context is this directory (on a hosting platform, set the build path to /server).
 # Needs BuildKit (the default `docker build` on any current Docker with buildx).
 
-FROM rust:1.99-alpine3.24 AS build
+FROM rust:1.99.1-alpine3.24@sha256:3ea887915f261f273d6a24efdfdb92665dee12199923e57870453644fe4ae5c9 AS build
 WORKDIR /src
 # Copy only what the build needs: hosting platforms such as Dokploy and Coolify write a .env with secrets into the context.
 COPY Cargo.toml Cargo.lock ./
@@ -10,7 +10,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --release --locked && cp target/release/push-server /push-server
 
-FROM gcr.io/distroless/static-debian13:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:d62067879de890a1def9da0e7766b7d20810a5e5555cef8506b752437d7a3e88
 COPY --from=build /push-server /push-server
 USER 65532:65532
 # Created after USER, so /data (and a fresh named volume seeded from it) belongs to 65532.
