@@ -34,7 +34,7 @@ pub enum ErrorKind {
     Missing,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UploadError {
     pub kind: ErrorKind,
     pub message: String,
@@ -65,7 +65,7 @@ pub struct Upload {
     pub thumb: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub server_url: String,

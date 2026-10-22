@@ -10,7 +10,7 @@ use tauri::Url;
 const PATCH_TIMEOUT: Duration = Duration::from_secs(55);
 const SHORT_TIMEOUT: Duration = Duration::from_secs(15);
 
-pub const BAD_URL: &str = "Enter a URL that starts with https://";
+const BAD_URL: &str = "Enter a URL that starts with https://";
 
 /// Never follows redirects, so the bearer token can't be forwarded anywhere else.
 pub fn client() -> reqwest::Client {
