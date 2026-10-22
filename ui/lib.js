@@ -11,15 +11,13 @@ export const previewUrl = (id) => tauri.previewUrl?.(id) ?? `preview://localhost
 
 // Platform ("macos", "windows" or "linux"): a synchronous guess from the user agent, confirmed by get_info.
 let platform = /Windows/.test(navigator.userAgent) ? 'windows' : /Linux|X11/.test(navigator.userAgent) ? 'linux' : 'macos';
-let mac = platform === 'macos';
-export const isMac = () => mac;
+export const isMac = () => platform === 'macos';
 export const isWindows = () => platform === 'windows';
-export const cmdKey = (e) => (mac ? e.metaKey : e.ctrlKey);
+export const cmdKey = (e) => (isMac() ? e.metaKey : e.ctrlKey);
 export function setPlatform(name) {
   platform = name;
-  mac = name === 'macos';
   // Only macOS has the window material and the inset title bar.
-  document.documentElement.classList.toggle('plain', !mac);
+  document.documentElement.classList.toggle('plain', !isMac());
 }
 setPlatform(platform);
 
@@ -86,12 +84,9 @@ const UNITS = [[1e9, 'GB', 2], [1e6, 'MB', 1], [1e3, 'KB', 0]];
 function unitFor(bytes) {
   return UNITS.find(([n]) => bytes >= n) ?? [1, 'bytes', 0];
 }
-function scaled(bytes, [n, , digits]) {
-  return String(+(bytes / n).toFixed(digits));
-}
 export function formatSize(bytes) {
-  const unit = unitFor(bytes);
-  return `${scaled(bytes, unit)} ${unit[1]}`;
+  const [n, name, digits] = unitFor(bytes);
+  return `${+(bytes / n).toFixed(digits)} ${name}`;
 }
 // "1.2 of 2.4 MB": both numbers in the total's unit, one decimal so the count moves smoothly.
 export function formatProgress(sent, total) {
@@ -105,12 +100,13 @@ export const percent = (sent, total) => (total > 0 ? Math.min(100, Math.floor((s
 // Intl.RelativeTimeFormat's short style adds periods).
 const dayFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
 const yearFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-export function relativeTime(ms, now = Date.now()) {
-  const mins = Math.floor((now - ms) / 60000);
+export function relativeTime(ms) {
+  const today = new Date();
+  const mins = Math.floor((today - ms) / 60000);
   if (mins < 1) return 'Just now';
   if (mins < 60) return `${mins} min ago`;
   if (mins < 24 * 60) return `${Math.floor(mins / 60)} hr ago`;
-  const then = new Date(ms), today = new Date(now);
+  const then = new Date(ms);
   const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
   if (then >= yesterday) return 'Yesterday';
   return (then.getFullYear() === today.getFullYear() ? dayFmt : yearFmt).format(then);
@@ -166,12 +162,12 @@ const KEY_NAMES = {
 const PLAIN_KEY_NAMES = { Enter: 'Enter', Tab: 'Tab', Backspace: 'Backspace', Delete: 'Delete', Escape: 'Esc',
   ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Home: 'Home', End: 'End', PageUp: 'PgUp', PageDown: 'PgDn' };
 
-export function keyName(code) {
-  return (!mac && PLAIN_KEY_NAMES[code]) || KEY_NAMES[code] || code.replace(/^(Key|Digit|Numpad)/, '');
+function keyName(code) {
+  return (!isMac() && PLAIN_KEY_NAMES[code]) || KEY_NAMES[code] || code.replace(/^(Key|Digit|Numpad)/, '');
 }
 
 export function formatModifiers(set) {
-  if (mac) return ['ctrl', 'alt', 'shift', 'cmd'].filter((m) => set.has(m)).map((m) => ({ ctrl: '⌃', alt: '⌥', shift: '⇧', cmd: '⌘' })[m]).join('');
+  if (isMac()) return ['ctrl', 'alt', 'shift', 'cmd'].filter((m) => set.has(m)).map((m) => ({ ctrl: '⌃', alt: '⌥', shift: '⇧', cmd: '⌘' })[m]).join('');
   return ['ctrl', 'alt', 'shift', 'cmd'].filter((m) => set.has(m)).map((m) => ({ ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', cmd: isWindows() ? 'Win' : 'Super' })[m]).join('+');
 }
 
@@ -179,24 +175,22 @@ export function formatModifiers(set) {
 export const BOTH_COMMANDS = 'LeftCommand+RightCommand';
 
 export function formatShortcut(accel) {
-  if (!accel) return '';
   if (accel === BOTH_COMMANDS) return '⌘ + ⌘';
   const mods = new Set();
   let key = '';
   for (const part of accel.split('+')) {
     const m = MODS[part.toLowerCase()];
-    if (m === 'cmdOrCtrl') mods.add(mac ? 'cmd' : 'ctrl');
+    if (m === 'cmdOrCtrl') mods.add(isMac() ? 'cmd' : 'ctrl');
     else if (m) mods.add(m);
     else key = part;
   }
   const m = formatModifiers(mods);
-  return mac ? m + keyName(key) : [m, keyName(key)].filter(Boolean).join('+');
+  return isMac() ? m + keyName(key) : [m, keyName(key)].filter(Boolean).join('+');
 }
 
 // Polite screen reader announcements ("Link copied").
 export function announce(text) {
   const el = document.getElementById('announcer');
-  if (!el) return;
   el.textContent = '';
   requestAnimationFrame(() => { el.textContent = text; });
 }
@@ -206,5 +200,4 @@ export function setRing(svg, pct) {
   const bar = svg.querySelector('.bar');
   bar.style.strokeDashoffset = String(100 - pct);
   bar.style.opacity = pct > 0 ? '1' : '0';
-  svg.setAttribute('aria-valuenow', String(pct));
 }
