@@ -166,7 +166,7 @@ export function createMock({ scenario, log, onHudDismiss, hovered }) {
       const id = newId(), ext = extOf(f.name);
       uploads.push({ id, name: `${id}.${ext}`, url: '', fileName: f.name, size: f.size, kind: kindOf(ext), createdAt,
         status: f.size ? 'queued' : 'failed', sent: 0, thumb: f.thumb ?? null, failAt: f.failAt ?? 0,
-        error: f.size ? null : { kind: 'unsupported', message: 'Folders and empty files can’t be uploaded.' } });
+        error: f.size ? null : { kind: 'unsupported', message: 'This file is empty.' } });
     }
     emitUploads();
     pump();
@@ -178,7 +178,7 @@ export function createMock({ scenario, log, onHudDismiss, hovered }) {
     set_server_url({ url }) {
       url = url.trim().replace(/\/+$/, '');
       if (!/^https:\/\/[^\s/]+$/.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(url)) {
-        throw 'Enter an address that starts with https://';
+        throw 'Enter a URL that starts with https://';
       }
       info.settings.serverUrl = url;
       return info.settings;
