@@ -115,14 +115,14 @@ function buildBar() {
     button('Drag out', () => mock.drag('leave'));
     button('Drop', () => { mock.drag('drop'); mock.add([{ name: 'Dropped Photo.jpg', size: 3_200_000, thumb: mock.fx.pics.photo }]); });
     button('Resume', () => mock.pump());
-  } else if (page === 'library') {
-    button('Replay', () => location.reload());
-    button('Upload', () => mock.add([{ name: 'Screenshot 2026-10-21 at 14.12.40.png', size: 1_840_000 }]));
+    button('Settings', () => mock.emit('navigate', { view: 'settings' }));
     return;
+  }
+  button('Replay', () => location.reload());
+  if (page === 'library') {
+    button('Upload', () => mock.add([{ name: 'Screenshot 2026-10-21 at 14.12.40.png', size: 1_840_000 }]));
   } else {
-    button('Replay', () => location.reload());
     button('Finish', () => { const u = mock.uploads().find((x) => x.status === 'uploading'); if (u) mock.complete(u.id); });
     button('Progress', () => mock.pump());
   }
-  button('Settings', () => mock.emit('navigate', { view: 'settings' }));
 }
