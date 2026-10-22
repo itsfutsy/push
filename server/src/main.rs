@@ -606,6 +606,7 @@ fn healthcheck() -> ExitCode {
     }
 }
 
+#[tokio::main]
 async fn run() -> Result<(), String> {
     let port = port()?;
     let app = Arc::new(App::from_env()?);
@@ -632,8 +633,7 @@ async fn run() -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+fn main() -> ExitCode {
     if std::env::args().nth(1).as_deref() == Some("healthcheck") {
         return healthcheck();
     }
@@ -641,7 +641,7 @@ async fn main() -> ExitCode {
         .with_max_level(Level::INFO)
         .with_target(false)
         .init();
-    match run().await {
+    match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             tracing::error!("{e}");
