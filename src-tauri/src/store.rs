@@ -157,18 +157,11 @@ fn save_token(_dir: &Path, token: &str) -> Result<(), String> {
 
 #[cfg(target_os = "linux")]
 fn load_token(dir: &Path) -> Result<Option<String>, String> {
-    match entry().and_then(|e| e.get_password()) {
-        Ok(token) => Ok(Some(token)),
-        Err(e) => {
-            let file = fs::read_to_string(dir.join("token")).ok().map(|t| t.trim().to_owned());
-            keyring_fallback(e, file.filter(|t| !t.is_empty()))
-        }
-    }
-}
-
-/// The token when the keyring couldn't give one, given what the fallback file holds.
-#[cfg(target_os = "linux")]
-fn keyring_fallback(error: keyring::Error, file: Option<String>) -> Result<Option<String>, String> {
+    let error = match entry().and_then(|e| e.get_password()) {
+        Ok(token) => return Ok(Some(token)),
+        Err(e) => e,
+    };
+    let file = fs::read_to_string(dir.join("token")).ok().map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
     match error {
         // No Secret Service, or no entry there: the private file is the only place left.
         keyring::Error::NoEntry | keyring::Error::NoDefaultStore => Ok(file),
