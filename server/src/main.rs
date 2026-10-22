@@ -90,7 +90,7 @@ struct App {
     files: PathBuf,
     /// Uploads in progress, as `{name}.part`. Same volume as `files`, so the final rename is atomic.
     tmp: PathBuf,
-    /// Names with a PATCH in flight.
+    /// Names a PATCH or the cleanup is working on.
     uploading: Arc<Mutex<HashSet<String>>>,
 }
 
@@ -148,7 +148,7 @@ impl App {
         self.tmp.join(format!("{name}.part"))
     }
 
-    /// Claims `name` for one PATCH, or `None` if another one holds it.
+    /// Claims `name`, or `None` if a PATCH or the cleanup holds it.
     fn lock(&self, name: &str) -> Option<UploadLock> {
         let fresh = self.uploading.lock().unwrap().insert(name.to_owned());
         fresh.then(|| UploadLock {
@@ -157,9 +157,7 @@ impl App {
         })
     }
 
-    /// Deletes `.part` files in `tmp` that nobody wrote to for `max_age`, except those with a
-    /// PATCH in flight. Returns how many. Blocking, so it runs on its own thread.
-    fn remove_stale_parts(&self, max_age: Duration) -> io::Result<usize> {
+    fn remove_stale_parts(&self) -> io::Result<usize> {
         let mut removed = 0;
         for entry in std::fs::read_dir(&self.tmp)? {
             let entry = entry?;
@@ -167,16 +165,13 @@ impl App {
             let Some(name) = file_name.to_str().and_then(|f| f.strip_suffix(".part")) else {
                 continue;
             };
-            // Hold the set while checking and removing, so no PATCH can claim the name and
-            // resume this file in between.
-            let uploading = self.uploading.lock().unwrap();
-            if uploading.contains(name) {
+            let Some(_lock) = self.lock(name) else {
                 continue;
-            }
-            let stale = match entry.metadata().and_then(|m| m.modified()) {
-                Ok(modified) => modified.elapsed().is_ok_and(|age| age > max_age),
-                Err(_) => false,
             };
+            let stale = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .is_ok_and(|m| m.elapsed().is_ok_and(|age| age > STALE_AFTER));
             if stale && std::fs::remove_file(entry.path()).is_ok() {
                 removed += 1;
             }
@@ -618,7 +613,7 @@ async fn run() -> Result<(), String> {
     let cleanup = app.clone();
     std::thread::spawn(move || {
         loop {
-            match cleanup.remove_stale_parts(STALE_AFTER) {
+            match cleanup.remove_stale_parts() {
                 Ok(0) => {}
                 Ok(n) => tracing::info!(removed = n, "removed abandoned uploads"),
                 Err(e) => tracing::warn!(error = %e, "cleanup failed"),
