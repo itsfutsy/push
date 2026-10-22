@@ -503,6 +503,7 @@ function openPreview(id) {
   else select([id]);
   pv.id = id;
   $('preview').hidden = false;
+  for (const a of $('preview').getAnimations({ subtree: true })) a.cancel();
   $('bar').inert = grid.inert = true;
   renderBar();
   showItem(t);
@@ -520,11 +521,7 @@ function closePreview() {
   renderBar();
   grid.focus({ preventScroll: true });
   t?.el.scrollIntoView({ block: 'nearest' });
-  zoom(t, false).finished.then(() => {
-    if (pv.id) return; // opened again meanwhile
-    $('preview').hidden = true;
-    for (const a of $('preview').getAnimations({ subtree: true })) a.cancel();
-  });
+  zoom(t, false).finished.then(() => { $('preview').hidden = true; }, () => {});
 }
 
 function step(by) {
