@@ -67,21 +67,14 @@ struct Config {
 }
 
 impl Config {
-    /// Reads settings through `var` (`std::env::var` in production) so tests need no global state.
-    fn from_env(var: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
-        let var = |key: &str| {
-            var(key)
-                .map(|v| v.trim().to_owned())
-                .filter(|v| !v.is_empty())
-        };
-
-        let token = var("PUSH_TOKEN").ok_or("PUSH_TOKEN is not set")?;
+    fn from_env() -> Result<Self, String> {
+        let token = env("PUSH_TOKEN").ok_or("PUSH_TOKEN is not set")?;
         if token.len() < 32 {
             return Err(
                 "PUSH_TOKEN is too short: use at least 32 characters (openssl rand -hex 32)".into(),
             );
         }
-        let public_url = var("PUSH_PUBLIC_URL")
+        let public_url = env("PUSH_PUBLIC_URL")
             .ok_or("PUSH_PUBLIC_URL is not set, for example https://share.example.com")?
             .trim_end_matches('/')
             .to_owned();
@@ -90,20 +83,15 @@ impl Config {
                 "PUSH_PUBLIC_URL is not an http(s) URL: {public_url}"
             ));
         }
-        let root_redirect = match var("PUSH_ROOT_REDIRECT") {
+        let root_redirect = match env("PUSH_ROOT_REDIRECT") {
             None => None,
             Some(url) if is_url(&url) => {
                 Some(HeaderValue::try_from(url).map_err(|e| e.to_string())?)
             }
             Some(url) => return Err(format!("PUSH_ROOT_REDIRECT is not an http(s) URL: {url}")),
         };
-        let port = match var("PORT") {
-            None => 3000,
-            Some(p) => p
-                .parse()
-                .map_err(|_| format!("PORT is not a port number: {p}"))?,
-        };
-        let data_dir = PathBuf::from(var("PUSH_DATA_DIR").unwrap_or_else(|| "/data".into()));
+        let port = port()?;
+        let data_dir = PathBuf::from(env("PUSH_DATA_DIR").unwrap_or_else(|| "/data".into()));
         Ok(Self {
             token,
             public_url,
@@ -111,6 +99,23 @@ impl Config {
             port,
             root_redirect,
         })
+    }
+}
+
+/// A setting, trimmed. Blank counts as unset: docker-compose passes an unset optional one as "".
+fn env(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|v| v.trim().to_owned())
+        .filter(|v| !v.is_empty())
+}
+
+fn port() -> Result<u16, String> {
+    match env("PORT") {
+        None => Ok(3000),
+        Some(p) => p
+            .parse()
+            .map_err(|_| format!("PORT is not a port number: {p}")),
     }
 }
 
@@ -606,10 +611,9 @@ async fn shutdown_signal() {
 /// Used by the Docker HEALTHCHECK, since the distroless image has no curl.
 fn healthcheck() -> ExitCode {
     use std::io::{Read, Write};
-    let port = std::env::var("PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(3000);
+    let Ok(port) = port() else {
+        return ExitCode::FAILURE;
+    };
     let healthy = (|| -> io::Result<bool> {
         let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
         let mut stream = std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(2))?;
@@ -629,7 +633,7 @@ fn healthcheck() -> ExitCode {
 }
 
 async fn run() -> Result<(), String> {
-    let config = Config::from_env(|key| std::env::var(key).ok())?;
+    let config = Config::from_env()?;
     let app = Arc::new(App::new(&config)?);
 
     let cleanup = app.clone();

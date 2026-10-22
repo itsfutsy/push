@@ -15,7 +15,6 @@ COPY --from=build /push-server /push-server
 USER 65532:65532
 # Created after USER, so /data (and a fresh named volume seeded from it) belongs to 65532.
 WORKDIR /data
-ENV PORT=3000 PUSH_DATA_DIR=/data
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
     CMD ["/push-server", "healthcheck"]
