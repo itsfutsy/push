@@ -3,7 +3,7 @@
 
 use std::cmp::Reverse;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -222,6 +222,16 @@ fn open_error(e: &std::io::Error) -> UploadError {
     }
 }
 
+async fn uploadable(path: &Path) -> Result<u64, UploadError> {
+    match tokio::fs::metadata(path).await {
+        Ok(m) if m.is_dir() => Err(unsupported("Folders can’t be uploaded.")),
+        Ok(m) if !m.is_file() => Err(unsupported("Only files can be uploaded.")),
+        Ok(m) if m.len() == 0 => Err(unsupported("This file is empty.")),
+        Ok(m) => Ok(m.len()),
+        Err(e) => Err(open_error(&e)),
+    }
+}
+
 /// A small PNG `data:` URL. It is resent with every `uploads` event while the item is in
 /// flight, so it must stay tiny.
 async fn thumbnail(img: DynamicImage) -> Option<String> {
@@ -281,12 +291,9 @@ async fn prepare(source: Source) -> (Upload, PathBuf, Origin) {
         Origin::Capture => chrono::Local::now().format("Screenshot %Y-%m-%d at %H.%M.%S.png").to_string(),
         _ => path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned()),
     };
-    let (size, error) = match tokio::fs::metadata(&path).await {
-        Ok(m) if m.is_dir() => (0, Some(unsupported("Folders can’t be uploaded."))),
-        Ok(m) if !m.is_file() => (0, Some(unsupported("Only files can be uploaded."))),
-        Ok(m) if m.len() == 0 => (0, Some(unsupported("This file is empty."))),
-        Ok(m) => (m.len(), None),
-        Err(e) => (0, Some(open_error(&e))),
+    let (size, error) = match uploadable(&path).await {
+        Ok(size) => (size, None),
+        Err(e) => (0, Some(e)),
     };
     let upload = Upload {
         name: format!("{id}.{ext}"),
@@ -538,11 +545,7 @@ pub async fn retry(app: &AppHandle, id: &str) -> Result<(), String> {
         }
         item.path.clone().ok_or("The file is no longer there.")?
     };
-    let size = match tokio::fs::metadata(&path).await {
-        Ok(m) if m.is_file() && m.len() > 0 => m.len(),
-        Ok(_) => return Err("This file can’t be uploaded.".into()),
-        Err(_) => return Err("The file is no longer there.".into()),
-    };
+    let size = uploadable(&path).await.map_err(|e| e.message)?;
     {
         let mut uploads = core.uploads.lock().unwrap();
         let batch = uploads.next();
