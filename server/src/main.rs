@@ -71,7 +71,7 @@ fn port() -> Result<u16, String> {
     }
 }
 
-fn is_url(s: &str) -> bool {
+fn is_json_safe_url(s: &str) -> bool {
     (s.starts_with("https://") || s.starts_with("http://"))
         && s.bytes()
             .all(|b| b.is_ascii_graphic() && b != b'"' && b != b'\\')
@@ -99,14 +99,14 @@ impl App {
             .ok_or("PUSH_PUBLIC_URL is not set, for example https://share.example.com")?
             .trim_end_matches('/')
             .to_owned();
-        if !is_url(&public_url) {
+        if !is_json_safe_url(&public_url) {
             return Err(format!(
                 "PUSH_PUBLIC_URL is not an http(s) URL: {public_url}"
             ));
         }
         let root_redirect = match env("PUSH_ROOT_REDIRECT") {
             None => None,
-            Some(url) if is_url(&url) => {
+            Some(url) if is_json_safe_url(&url) => {
                 Some(HeaderValue::try_from(url).map_err(|e| e.to_string())?)
             }
             Some(url) => return Err(format!("PUSH_ROOT_REDIRECT is not an http(s) URL: {url}")),
