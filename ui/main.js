@@ -53,7 +53,7 @@ function onProgress({ id, sent, total }) {
   const u = state.uploads.find((x) => x.id === id);
   if (!u) return;
   u.sent = sent;
-  if (total) u.size = total;
+  u.size = total;
   if (u.status === 'queued') u.status = 'uploading';
   const r = rows.get(id);
   if (r) updateRowText(r);
@@ -162,7 +162,7 @@ function renderHint(el) {
 
 function onDrag(p) {
   if (p.type === 'enter') {
-    state.dragCount = p.paths?.length ?? 1;
+    state.dragCount = p.paths.length;
     if (state.view === 'settings') showView('main');
   }
   const dragging = p.type === 'enter' || p.type === 'over';

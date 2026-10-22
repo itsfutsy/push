@@ -142,7 +142,7 @@ function onUploads(list) {
 function onProgress({ id, sent, total }) {
   if (shown?.kind !== 'upload' || shown.upload.id !== id) return;
   shown.upload.sent = sent;
-  if (total) shown.upload.size = total;
+  shown.upload.size = total;
   if (shown.upload.status === 'queued') shown.upload.status = 'uploading';
   render();
 }
