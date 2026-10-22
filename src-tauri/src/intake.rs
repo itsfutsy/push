@@ -69,6 +69,29 @@ pub fn prune_inbox(inbox: &Path, max_age: Duration) {
     }
 }
 
+/// macOS installs the Share extension switched off. Turns it on in the background, unless the
+/// user has turned it off themselves.
+#[cfg(target_os = "macos")]
+pub fn enable_share_extension() {
+    const ID: &str = "io.github.itsfutsy.push.share";
+    let pluginkit = |args: &[&str]| std::process::Command::new("/usr/bin/pluginkit").args(args).output();
+    std::thread::spawn(move || {
+        // Right after an install, macOS can take a moment to find the extension.
+        for _ in 0..30 {
+            let Ok(out) = pluginkit(&["-m", "-i", ID]) else { return };
+            // pluginkit marks it "+" when on, "-" when the user turned it off, and nothing when never set.
+            match String::from_utf8_lossy(&out.stdout).trim_start().chars().next() {
+                Some('+' | '-') => return,
+                Some(_) => {
+                    let _ = pluginkit(&["-e", "use", "-i", ID]);
+                    return;
+                }
+                None => std::thread::sleep(Duration::from_secs(1)),
+            }
+        }
+    });
+}
+
 /// The single-instance callback: another `push` process forwarded its arguments.
 pub fn forwarded(app: &AppHandle, argv: Vec<String>, cwd: String) {
     let args: Vec<String> = argv.into_iter().skip(1).collect();

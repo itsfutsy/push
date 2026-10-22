@@ -76,6 +76,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let _ = std::fs::remove_dir_all(cache_dir.join("captures"));
     let _ = std::fs::remove_dir_all(cache_dir.join("quicklook"));
     intake::prune_inbox(&cache_dir.join("inbox"), INBOX_MAX_AGE);
+    #[cfg(target_os = "macos")]
+    intake::enable_share_extension();
 
     let tray = tray::build(&handle).inspect_err(|e| eprintln!("push: no tray icon: {e}")).ok();
     let has_tray = tray.is_some() && tray::host_present();
