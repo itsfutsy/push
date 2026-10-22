@@ -225,7 +225,7 @@ function leave(el) {
 }
 
 function rowMode(r) {
-  if (r.confirm) return 'confirm';
+  if (state.confirmId === r.id) return 'confirm';
   return isActive(r.u) ? 'active' : r.u.status;
 }
 
@@ -399,7 +399,6 @@ async function retry(r) {
 function askDelete(r) {
   closeConfirm();
   state.confirmId = r.id;
-  r.confirm = true;
   renderRow(r);
   r.el.querySelector('.cancel').focus();
 }
@@ -407,9 +406,7 @@ function askDelete(r) {
 function closeConfirm() {
   const r = rows.get(state.confirmId);
   state.confirmId = null;
-  if (!r || !r.confirm) return;
-  r.confirm = false;
-  renderRow(r);
+  if (r) renderRow(r);
 }
 
 async function deleteUpload(r) {
@@ -418,7 +415,6 @@ async function deleteUpload(r) {
     await invoke('delete_upload', { id: r.id }); // the uploads event removes the row
   } catch (e) {
     if (state.confirmId === r.id) state.confirmId = null;
-    r.confirm = false;
     renderRow(r);
     flashRowError(r, e);
   }
