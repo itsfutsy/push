@@ -180,8 +180,6 @@ fn keyring_fallback(error: keyring::Error, file: Option<String>) -> Result<Optio
 
 #[cfg(target_os = "linux")]
 fn save_token(dir: &Path, token: &str) -> Result<(), String> {
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
-
     let file = dir.join("token");
     if entry().and_then(|e| e.set_password(token)).is_ok() {
         let _ = fs::remove_file(file);
@@ -189,15 +187,5 @@ fn save_token(dir: &Path, token: &str) -> Result<(), String> {
     }
     // Best effort: an older token left in the keyring would win over the file on the next read.
     let _ = entry().and_then(|e| e.delete_credential());
-    let write = || -> std::io::Result<()> {
-        fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
-        let tmp = dir.join("token.tmp");
-        let _ = fs::remove_file(&tmp);
-        let mut f = fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp)?;
-        f.set_permissions(fs::Permissions::from_mode(0o600))?;
-        f.write_all(token.as_bytes())?;
-        f.sync_all()?;
-        fs::rename(&tmp, &file)
-    };
-    write().map_err(|e| format!("Couldn’t save the token ({e})."))
+    write_atomic(&file, token.as_bytes()).map_err(|e| format!("Couldn’t save the token ({e})."))
 }
