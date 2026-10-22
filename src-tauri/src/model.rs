@@ -176,12 +176,6 @@ pub fn kind_for(ext: &str) -> Kind {
     }
 }
 
-
-/// "Screenshot 2026-10-21 at 14.03.22.png", like macOS names its own screenshots.
-pub fn screenshot_name(at: chrono::DateTime<chrono::Local>) -> String {
-    at.format("Screenshot %Y-%m-%d at %H.%M.%S.png").to_string()
-}
-
 pub fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

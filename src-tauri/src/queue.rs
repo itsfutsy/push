@@ -47,14 +47,6 @@ pub enum Origin {
 pub struct Source {
     pub path: PathBuf,
     pub origin: Origin,
-    /// Overrides the displayed file name (captures).
-    pub file_name: Option<String>,
-}
-
-impl Source {
-    pub fn file(path: PathBuf) -> Self {
-        Self { path, origin: Origin::File, file_name: None }
-    }
 }
 
 struct Item {
@@ -281,12 +273,14 @@ async fn add_thumbnail(app: &AppHandle, id: &str) {
 }
 
 async fn prepare(source: Source) -> (Upload, PathBuf, Origin) {
-    let Source { path, origin, file_name } = source;
+    let Source { path, origin } = source;
     let id = new_id();
-    let ext = if origin == Origin::Capture { "png".to_owned() } else { sanitize_ext(&path) };
-    let file_name = file_name.unwrap_or_else(|| {
-        path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned())
-    });
+    let ext = sanitize_ext(&path);
+    let file_name = match origin {
+        // Like macOS names its own screenshots: "Screenshot 2026-10-21 at 14.03.22.png".
+        Origin::Capture => chrono::Local::now().format("Screenshot %Y-%m-%d at %H.%M.%S.png").to_string(),
+        _ => path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned()),
+    };
     let (size, error) = match tokio::fs::metadata(&path).await {
         Ok(m) if m.is_dir() => (0, Some(unsupported("Folders can’t be uploaded."))),
         Ok(m) if !m.is_file() => (0, Some(unsupported("Only files can be uploaded."))),

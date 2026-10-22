@@ -10,7 +10,6 @@ use tauri::{AppHandle, Manager, Url};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::capture::{self, Shot};
-use crate::model::screenshot_name;
 use crate::queue::{self, Origin, Source};
 use crate::{Core, windows};
 
@@ -140,8 +139,8 @@ fn add(app: &AppHandle, paths: Vec<PathBuf>, inbox_ids: Vec<String>) {
         let mut sources: Vec<Source> = paths
             .into_iter()
             .map(|path| match inbox_folder_of(&path, &inbox) {
-                Some(dir) => Source { path, origin: Origin::Inbox(dir), file_name: None },
-                None => Source::file(path),
+                Some(dir) => Source { path, origin: Origin::Inbox(dir) },
+                None => Source { path, origin: Origin::File },
             })
             .collect();
         for id in inbox_ids {
@@ -216,7 +215,7 @@ fn inbox_sources(inbox: &Path, id: &str) -> Vec<Source> {
     {
         eprintln!("push: couldn’t remove an empty inbox folder: {e}");
     }
-    files.into_iter().map(|path| Source { path, origin: Origin::Inbox(dir.clone()), file_name: None }).collect()
+    files.into_iter().map(|path| Source { path, origin: Origin::Inbox(dir.clone()) }).collect()
 }
 
 /// `inbox/<id>` if `path` is a file the Share extension copied there.
@@ -254,10 +253,7 @@ pub fn capture(app: &AppHandle) {
             windows::capture_ended(&app);
         }
         match shot {
-            Shot::Done(path) => {
-                let name = screenshot_name(chrono::Local::now());
-                queue::intake(&app, vec![Source { path, origin: Origin::Capture, file_name: Some(name) }]).await;
-            }
+            Shot::Done(path) => queue::intake(&app, vec![Source { path, origin: Origin::Capture }]).await,
             Shot::Cancelled => {}
             Shot::NoPermission => windows::permission_needed(&app),
             Shot::Failed(reason) => windows::capture_failed(&reason),
