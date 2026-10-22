@@ -1,9 +1,7 @@
-# Push server. Build context is this directory (on a hosting platform, set the build path to /server).
 # Needs BuildKit (the default `docker build` on any current Docker with buildx).
 
 FROM rust:1.99-alpine3.24 AS build
 WORKDIR /src
-# Copy only what the build needs: hosting platforms such as Dokploy and Coolify write a .env with secrets into the context.
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

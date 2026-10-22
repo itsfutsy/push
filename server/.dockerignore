@@ -1,5 +1,4 @@
-# Allowlist: only these reach the build context. Keeps out target/ and the .env
-# (with PUSH_TOKEN) that hosting platforms such as Dokploy and Coolify write next to the Dockerfile.
+# Hosting platforms such as Dokploy and Coolify write a .env (with PUSH_TOKEN) next to the Dockerfile.
 *
 !Cargo.toml
 !Cargo.lock

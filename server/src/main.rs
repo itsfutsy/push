@@ -1,5 +1,3 @@
-//! Push server: stores the owner's uploads and serves them at `/i/{id}.{ext}`.
-
 use std::{
     collections::HashSet,
     io,
@@ -29,9 +27,8 @@ use tower_http::{
 };
 use tracing::Level;
 
-/// Largest accepted PATCH body. Clients send 8 MiB chunks.
+/// Clients send 8 MiB chunks.
 const MAX_CHUNK: u64 = 10 * 1024 * 1024;
-/// A `.part` file nobody has written to for this long is an abandoned upload.
 const STALE_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 const CLEANUP_EVERY: Duration = Duration::from_secs(60 * 60);
 
@@ -43,7 +40,6 @@ const ROBOTS_TAG: &str = "noindex, nofollow, noarchive, nosnippet, noimageindex"
 const CSP: &str =
     "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox";
 
-/// Link-preview bots may fetch files so shared links unfurl; everyone else is kept out.
 const ROBOTS_TXT: &str = "\
 User-agent: Discordbot
 User-agent: Twitterbot
@@ -58,7 +54,7 @@ User-agent: *
 Disallow: /
 ";
 
-/// A setting, trimmed. Blank counts as unset: docker-compose passes an unset optional one as "".
+/// docker-compose passes an unset optional setting as "".
 fn env(key: &str) -> Option<String> {
     std::env::var(key)
         .ok()
@@ -75,7 +71,6 @@ fn port() -> Result<u16, String> {
     }
 }
 
-/// An http(s) URL of printable ASCII without quotes or backslashes, so it is safe in JSON and headers.
 fn is_url(s: &str) -> bool {
     (s.starts_with("https://") || s.starts_with("http://"))
         && s.bytes()
@@ -86,11 +81,9 @@ struct App {
     token: Vec<u8>,
     public_url: String,
     root_redirect: Option<HeaderValue>,
-    /// Finished uploads, served at `/i/{name}`.
     files: PathBuf,
-    /// Uploads in progress, as `{name}.part`. Same volume as `files`, so the final rename is atomic.
+    /// Same volume as `files`, so the final rename is atomic.
     tmp: PathBuf,
-    /// Names a PATCH or the cleanup is working on.
     uploading: Arc<Mutex<HashSet<String>>>,
 }
 
@@ -121,7 +114,6 @@ impl App {
         let data_dir = PathBuf::from(env("PUSH_DATA_DIR").unwrap_or_else(|| "/data".into()));
         let files = data_dir.join("files");
         let tmp = data_dir.join("tmp");
-        // Create the storage dirs and check they're writable, so a bad volume fails loudly at boot.
         for dir in [&files, &tmp] {
             let probe = dir.join(".write-test");
             std::fs::create_dir_all(dir)
@@ -148,7 +140,6 @@ impl App {
         self.tmp.join(format!("{name}.part"))
     }
 
-    /// Claims `name`, or `None` if a PATCH or the cleanup holds it.
     fn lock(&self, name: &str) -> Option<UploadLock> {
         let fresh = self.uploading.lock().unwrap().insert(name.to_owned());
         fresh.then(|| UploadLock {
@@ -191,8 +182,6 @@ impl Drop for UploadLock {
     }
 }
 
-/// Validates a `{id}.{ext}` name and returns its extension. The rules leave no room for
-/// separators or dots in the id, so a valid name can never point outside its directory.
 fn name_ext(name: &str) -> Option<&str> {
     let (id, ext) = name.split_once('.')?;
     let id_ok = (6..=32).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric());
@@ -203,8 +192,8 @@ fn name_ext(name: &str) -> Option<&str> {
     (id_ok && ext_ok).then_some(ext)
 }
 
-/// Types that may render in the browser. Everything else downloads as an attachment,
-/// so uploaded HTML, SVG, JS or PDF never runs on the site's origin.
+/// Browsers run uploaded HTML, SVG, JS and PDF on the site's origin, so anything not listed
+/// downloads as an attachment.
 fn inline_type(ext: &str) -> Option<&'static str> {
     Some(match ext {
         "png" => "image/png",
@@ -233,8 +222,8 @@ fn router(app: Arc<App>) -> Router {
             patch(upload).head(upload_status).delete(delete),
         )
         .method_not_allowed_fallback(|| async { not_found() })
-        // Runs before every API handler, so nothing about the request (not even its size)
-        // is looked at without the token.
+        // route_layer runs before the handler extracts anything, so nothing about the request
+        // (not even its size) is read without the token.
         .route_layer(middleware::from_fn_with_state(app.clone(), require_token));
 
     let always = |name: &'static str, value: &'static str| {
@@ -252,10 +241,13 @@ fn router(app: Arc<App>) -> Router {
         .merge(api)
         .fallback(|| async { not_found() })
         .with_state(app)
-        // One line per request: method, path, status, latency. Headers are never logged.
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .make_span_with(
+                    DefaultMakeSpan::new()
+                        .level(Level::INFO)
+                        .include_headers(false),
+                )
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
         // Added after the trace layer, so the Docker healthcheck doesn't log a line every 10 s.
@@ -293,14 +285,12 @@ fn conflict(error: &str) -> Response {
     json(StatusCode::CONFLICT, format!(r#"{{"error":"{error}"}}"#))
 }
 
-/// A chunk that doesn't start where the server's copy ends: tells the client where it does.
 fn offset_conflict(on_disk: u64) -> Response {
     let mut res = conflict("offset");
     res.headers_mut().insert(UPLOAD_OFFSET, on_disk.into());
     res
 }
 
-/// A storage failure: logged, answered with a bare 500.
 struct ServerError(io::Error);
 
 impl From<io::Error> for ServerError {
@@ -318,7 +308,6 @@ impl IntoResponse for ServerError {
 
 type Result<T = Response, E = ServerError> = std::result::Result<T, E>;
 
-/// Size of the file at `path`, or `None` if there is none.
 async fn file_len(path: &FsPath) -> io::Result<Option<u64>> {
     match fs::metadata(path).await {
         Ok(meta) => Ok(Some(meta.len())),
@@ -368,7 +357,6 @@ async fn serve_file(
         );
         // The CSP sandbox gives the page an opaque origin, and Chrome's player page loads the
         // video with crossorigin="anonymous", so without this a linked video never plays.
-        // The link is the only secret, and it already lets anyone fetch the file.
         headers.insert(
             header::ACCESS_CONTROL_ALLOW_ORIGIN,
             HeaderValue::from_static("*"),
@@ -383,7 +371,6 @@ async fn serve_file(
     res
 }
 
-/// Guards every `/api` route. Missing and wrong tokens get the same answer.
 async fn require_token(State(app): State<Arc<App>>, req: Request, next: Next) -> Response {
     let valid = req
         .headers()
@@ -432,8 +419,6 @@ async fn delete(State(app): State<Arc<App>>, Path(name): Path<String>) -> Result
         return Ok(bad_request());
     }
     let mut found = false;
-    // The .part goes first. A PATCH in flight for this name then either published before
-    // that (and its file goes next) or finds its .part gone when it tries to publish.
     for path in [app.part(&name), app.files.join(&name)] {
         match fs::remove_file(&path).await {
             Ok(()) => found = true,
@@ -456,13 +441,11 @@ async fn upload(
     body: Body,
 ) -> Result {
     let number = |h: &HeaderName| headers.get(h)?.to_str().ok()?.parse::<u64>().ok();
-    // Refuse oversized chunks up front. Bodies without a Content-Length (chunked) are
-    // allowed and capped while streaming instead; hyper rejects a malformed Content-Length.
+    // hyper rejects a malformed Content-Length; bodies without one are capped while streaming.
     if number(&header::CONTENT_LENGTH).is_some_and(|len| len > MAX_CHUNK) {
         return Ok(too_large());
     }
 
-    // 1. Well-formed request.
     let (Some(offset), Some(total)) = (number(&UPLOAD_OFFSET), number(&UPLOAD_LENGTH)) else {
         return Ok(bad_request());
     };
@@ -470,8 +453,6 @@ async fn upload(
         return Ok(bad_request());
     }
 
-    // 2 and 3. Never overwrite a finished file, and allow one writer per name. Claiming the
-    // lock first means the existence check can't race with a same-name upload finishing.
     let lock = app.lock(&name);
     if file_len(&app.files.join(&name)).await?.is_some() {
         return Ok(conflict("exists"));
@@ -480,16 +461,13 @@ async fn upload(
         return Ok(conflict("busy"));
     };
 
-    // 4. The chunk must start exactly where the server's copy ends. The length is read from
-    // the handle the chunk is then written through, so both refer to the same file.
     let opened = fs::OpenOptions::new()
         .append(true)
-        .create(offset == 0) // only a first chunk starts a new .part
+        .create(offset == 0)
         .open(app.part(&name))
         .await;
     let file = match opened {
         Ok(file) => file,
-        // No partial upload to resume.
         Err(e) if e.kind() == io::ErrorKind::NotFound && offset > 0 => {
             return Ok(offset_conflict(0));
         }
@@ -500,8 +478,7 @@ async fn upload(
         return Ok(offset_conflict(on_disk));
     }
 
-    // 5 and 6 run in their own task: if the client hangs up, hyper may drop this handler,
-    // but the chunk still gets flushed and the lock released.
+    // If the client hangs up, hyper may drop this handler.
     tokio::spawn(async move {
         let _lock = lock;
         append_chunk(&app, &name, file, offset, total, body).await
@@ -518,12 +495,12 @@ async fn append_chunk(
     total: u64,
     body: Body,
 ) -> Result {
-    let mut stream = body.into_data_stream(); // streamed, never buffered whole
+    let mut stream = body.into_data_stream();
     let mut received = 0;
     let mut failure = None;
     while let Some(bytes) = stream.next().await {
         let Ok(bytes) = bytes else {
-            failure = Some(bad_request()); // the client hung up mid-chunk
+            failure = Some(bad_request());
             break;
         };
         received += bytes.len() as u64;
@@ -535,7 +512,6 @@ async fn append_chunk(
             None
         };
         if let Some(res) = rejected {
-            // Drop what this request already wrote: a rejected chunk leaves no trace.
             file.flush().await?;
             file.set_len(offset).await?;
             return Ok(res);
@@ -545,8 +521,7 @@ async fn append_chunk(
             break;
         }
     }
-    // Always flush, even after a hang-up: tokio finishes writes in the background, and the
-    // length on disk is what HEAD reports and the client resumes from.
+    // tokio finishes writes in the background.
     file.flush().await?;
     if let Some(res) = failure {
         return Ok(res);
@@ -560,7 +535,6 @@ async fn append_chunk(
     }
     drop(file);
     match fs::rename(app.part(name), app.files.join(name)).await {
-        // A DELETE removed the .part while this chunk was in flight: don't publish.
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(not_found()),
         result => result?,
     }
