@@ -265,7 +265,7 @@ function buildRow(r) {
       iconButton('link', 'Copy Link', () => copyLink(r)),
       iconButton('trash-2', 'Delete', () => askDelete(r), 'del'));
   } else if (r.mode === 'active') {
-    r.ring = ringSvg();
+    r.ring = $('row-ring').content.firstElementChild.cloneNode(true);
     trail = h('span', { class: 'trail' },
       h('button', { class: 'icon-btn stop', type: 'button', 'aria-label': `Cancel uploading ${u.fileName}`, title: 'Cancel Upload',
         onclick: () => invoke('cancel_upload', { id: r.id }) }, r.ring));
@@ -285,22 +285,6 @@ function buildRow(r) {
 
 function iconButton(name, label, onclick, cls = '') {
   return h('button', { class: `icon-btn ${cls}`.trim(), type: 'button', 'aria-label': label, title: label, onclick }, icon(name));
-}
-
-function ringSvg() {
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('class', 'ring');
-  svg.setAttribute('viewBox', '0 0 20 20');
-  svg.setAttribute('aria-hidden', 'true');
-  for (const cls of ['track', 'bar']) {
-    const c = document.createElementNS(ns, 'circle');
-    c.setAttribute('class', cls);
-    c.setAttribute('cx', '10'); c.setAttribute('cy', '10'); c.setAttribute('r', '9');
-    if (cls === 'bar') c.setAttribute('pathLength', '100');
-    svg.append(c);
-  }
-  return svg;
 }
 
 function updateRowText(r, fade = false) {
