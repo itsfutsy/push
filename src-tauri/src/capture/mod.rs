@@ -49,11 +49,6 @@ pub fn open_permission_settings() {
     platform::open_permission_settings();
 }
 
-/// false on Linux when WAYLAND_DISPLAY is set.
-pub fn shortcut_supported() -> bool {
-    platform::shortcut_supported()
-}
-
 /// Creates `dir` (owner-only: captures can contain anything on screen; on Windows the per-user
 /// cache folder already is) and returns an unused PNG path in it.
 async fn new_capture_path(dir: &Path) -> std::io::Result<PathBuf> {

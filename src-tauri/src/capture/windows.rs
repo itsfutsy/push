@@ -105,7 +105,3 @@ fn overlay_in_front() -> bool {
 }
 
 pub(super) fn open_permission_settings() {}
-
-pub(super) fn shortcut_supported() -> bool {
-    true
-}

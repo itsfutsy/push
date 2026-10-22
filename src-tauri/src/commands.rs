@@ -35,7 +35,7 @@ pub async fn get_info(app: AppHandle) -> AppInfo {
         settings,
         has_token,
         platform: std::env::consts::OS,
-        shortcut_supported: capture::shortcut_supported(),
+        shortcut_supported: shortcut::supported(),
         version: app.package_info().version.to_string(),
         uploads,
     }
@@ -79,7 +79,7 @@ pub async fn test_connection(app: AppHandle) -> Connection {
 pub async fn set_shortcut(app: AppHandle, accelerator: Option<String>) -> Result<Settings> {
     let accelerator = accelerator.map(|a| a.trim().to_owned()).filter(|a| !a.is_empty());
     let next = accelerator.as_deref().map(shortcut::parse).transpose()?;
-    if capture::shortcut_supported() {
+    if shortcut::supported() {
         shortcut::replace(&app, next)?;
     }
     update_settings(&app, |s| s.shortcut = accelerator)

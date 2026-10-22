@@ -59,7 +59,3 @@ pub(super) fn open_permission_settings() {
             .status()
     });
 }
-
-pub(super) fn shortcut_supported() -> bool {
-    true
-}

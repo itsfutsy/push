@@ -5,9 +5,14 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, Short
 
 #[cfg(target_os = "macos")]
 use crate::command_keys;
-use crate::{Core, capture, intake};
+use crate::{Core, intake};
 
 pub const IN_USE: &str = "That shortcut is in use. Try another.";
+
+/// Global shortcuts go through X11; on Wayland they register fine and then never fire.
+pub fn supported() -> bool {
+    !cfg!(target_os = "linux") || std::env::var_os("WAYLAND_DISPLAY").is_none()
+}
 
 #[derive(Clone, Copy)]
 pub enum Hotkey {
@@ -80,7 +85,7 @@ pub fn replace(app: &AppHandle, next: Option<Hotkey>) -> Result<(), String> {
 
 /// While the shortcut recorder is active, pressing the current combo must not capture.
 pub fn pause(app: &AppHandle, paused: bool) -> Result<(), String> {
-    if !capture::shortcut_supported() {
+    if !supported() {
         return Ok(());
     }
     if paused {
@@ -96,7 +101,7 @@ pub fn pause(app: &AppHandle, paused: bool) -> Result<(), String> {
 
 /// Registers the saved shortcut at launch.
 pub fn init(app: &AppHandle) {
-    if !capture::shortcut_supported() {
+    if !supported() {
         return;
     }
     let accelerator = app.state::<Core>().settings.lock().unwrap().shortcut.clone();
