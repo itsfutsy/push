@@ -71,6 +71,8 @@ function currentUpload() {
   return { active, current: active.find((u) => u.status === 'uploading') ?? active.at(-1) };
 }
 
+const openSettings = { action: 'Open Settings', run: () => showView('settings') };
+
 function zoneView() {
   if (state.dragging) {
     return { state: 'over', title: 'Release to upload',
@@ -79,18 +81,18 @@ function zoneView() {
   const { active, current } = currentUpload();
   if (current) {
     return { state: 'uploading', title: active.length > 1 ? `Uploading ${active.length} files…` : 'Uploading…',
-      current, action: 'Cancel', actionLabel: `Cancel uploading ${current.fileName}` };
+      current, action: 'Cancel', actionLabel: `Cancel uploading ${current.fileName}`, run: () => invoke('cancel_upload', { id: current.id }) };
   }
   if (state.success && Date.now() < state.success.until) {
     return { state: 'success', title: 'Link copied', sub: shortUrl(state.success.url) };
   }
   if (!configured()) {
     if (!state.info.hasToken && !state.info.settings.serverUrl) {
-      return { state: 'setup', title: 'Connect your server', sub: 'Add its address and your upload token.', action: 'Open Settings' };
+      return { state: 'setup', title: 'Connect your server', sub: 'Add its address and your upload token.', ...openSettings };
     }
     return state.info.hasToken
-      ? { state: 'setup', title: 'Add your server', sub: 'Push needs its address before it can upload.', action: 'Open Settings' }
-      : { state: 'setup', title: 'Add your upload token', sub: 'Push needs it before it can upload.', action: 'Open Settings' };
+      ? { state: 'setup', title: 'Add your server', sub: 'Push needs its address before it can upload.', ...openSettings }
+      : { state: 'setup', title: 'Add your upload token', sub: 'Push needs it before it can upload.', ...openSettings };
   }
   const failed = state.uploads.find((u) => u.id === state.errorId && u.status === 'failed');
   if (failed) return errorView(failed);
@@ -99,18 +101,19 @@ function zoneView() {
 
 function errorView(u) {
   const host = hostOf(state.info.settings.serverUrl) || 'the server';
-  const base = { state: 'error', failed: u };
+  const retry = { action: 'Try Again', run: () => invoke('retry_upload', { id: u.id }).catch((e) => { $('zone-sub').textContent = String(e); }) };
+  const dismiss = { action: 'OK', run: () => invoke('cancel_upload', { id: u.id }) };
   switch (u.error?.kind) {
     case 'auth':
-      return { ...base, title: 'Upload token not accepted', sub: 'Check the token in Settings.', action: 'Open Settings' };
+      return { state: 'error', title: 'Upload token not accepted', sub: 'Check the token in Settings.', ...openSettings };
     case 'network':
-      return { ...base, title: `Can’t reach ${host}`, sub: 'Check your connection and try again.', action: 'Try Again' };
+      return { state: 'error', title: `Can’t reach ${host}`, sub: 'Check your connection and try again.', ...retry };
     case 'unsupported':
-      return { ...base, title: 'Can’t upload this item', sub: u.error.message, action: 'OK' };
+      return { state: 'error', title: 'Can’t upload this item', sub: u.error.message, ...dismiss };
     case 'missing':
-      return { ...base, title: 'File not found', sub: u.error.message, action: 'OK' };
+      return { state: 'error', title: 'File not found', sub: u.error.message, ...dismiss };
     default:
-      return { ...base, title: 'Upload failed', sub: u.error?.message || 'Something went wrong.', action: 'Try Again' };
+      return { state: 'error', title: 'Upload failed', sub: u.error?.message || 'Something went wrong.', ...retry };
   }
 }
 
@@ -160,18 +163,6 @@ function renderHint(el) {
   } else {
     el.textContent = 'Set a capture shortcut in Settings';
   }
-}
-
-function onZoneAction() {
-  const v = zone;
-  if (v.action === 'Cancel') invoke('cancel_upload', { id: v.current.id });
-  else if (v.action === 'Open Settings') showView('settings');
-  else if (v.action === 'Try Again') invoke('retry_upload', { id: v.failed.id }).catch(showZoneError);
-  else if (v.action === 'OK') invoke('cancel_upload', { id: v.failed.id });
-}
-
-function showZoneError(e) {
-  $('zone-sub').textContent = String(e);
 }
 
 function onDrag(p) {
@@ -684,7 +675,7 @@ function onKey(e) {
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); invoke('pick_files'); }
     else if (e.key === 'Escape') {
       if (state.confirmId) closeConfirm();
-      else if (zone.state === 'uploading') invoke('cancel_upload', { id: zone.current.id });
+      else if (zone.state === 'uploading') zone.run();
     }
     return;
   }
@@ -704,7 +695,7 @@ function wire() {
   $('show-all').addEventListener('click', () => invoke('show_library'));
   $('done').addEventListener('click', () => showView('main'));
   $('zone-hit').addEventListener('click', () => (zone.state === 'setup' ? showView('settings') : invoke('pick_files')));
-  $('zone-action').addEventListener('click', onZoneAction);
+  $('zone-action').addEventListener('click', () => zone.run());
   $('list').addEventListener('scroll', updateFades, { passive: true });
   // Refit middle-truncated names when the list's width changes (shown again, scroll bar style).
   new ResizeObserver(() => {
