@@ -73,7 +73,7 @@ impl Item {
 }
 
 /// Size and modification time of a file, to notice it changed between attempts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct Stamp {
     size: u64,
     modified: Option<SystemTime>,
@@ -82,25 +82,6 @@ struct Stamp {
 impl Stamp {
     fn of(meta: &std::fs::Metadata) -> Self {
         Self { size: meta.len(), modified: meta.modified().ok() }
-    }
-}
-
-/// How an upload attempt begins.
-#[derive(Debug, PartialEq, Eq)]
-enum Start {
-    /// Nothing was sent before.
-    Fresh,
-    /// Continue from whatever an earlier attempt left on the server.
-    Resume,
-    /// The file changed since the last attempt: what the server has must not be reused.
-    Restart,
-}
-
-fn start_for(previous: Option<Stamp>, now: Stamp) -> Start {
-    match previous {
-        None => Start::Fresh,
-        Some(previous) if previous == now => Start::Resume,
-        Some(_) => Start::Restart,
     }
 }
 
@@ -470,10 +451,10 @@ async fn run(app: &AppHandle, job: &Job) -> Result<(String, u64), UploadError> {
     }
     let api = Api::new(core.http.clone(), base.clone(), token);
     let stamp = Stamp::of(&meta);
-    let start = start_for(job.last_attempt, stamp);
-    if start == Start::Restart {
-        // Resuming would splice the old version's bytes into the new one. The old stamp is
-        // kept until this succeeds, so a failed delete is tried again on the next attempt.
+    let resume = job.last_attempt == Some(stamp);
+    let changed = job.last_attempt.is_some() && !resume;
+    if changed {
+        // Resuming would splice the old version's bytes into the new one.
         match api.delete(&job.name).await {
             Ok(204 | 404) => {}
             Ok(401) => return Err(transfer::auth_error()),
@@ -485,7 +466,6 @@ async fn run(app: &AppHandle, job: &Job) -> Result<(String, u64), UploadError> {
         item.last_attempt = Some(stamp);
     }
     let progress = progress_reporter(app, &job.id, total);
-    let resume = start == Start::Resume;
     let url = match transfer::send(&api, &mut file, &job.name, total, resume, &progress).await? {
         Sent::Url(url) if is_web_url(&url) => url,
         Sent::Url(_) => return Err(UploadError::new(ErrorKind::Server, "The server sent an invalid link.")),
@@ -585,7 +565,7 @@ fn discard(app: &AppHandle, name: String) {
 }
 
 /// Queues a failed item again (same id). The next attempt resumes whatever reached the
-/// server, or starts over if the file changed since (see `start_for`).
+/// server, or starts over if the file changed.
 pub async fn retry(app: &AppHandle, id: &str) -> Result<(), String> {
     let core = app.state::<Core>();
     let path = {
