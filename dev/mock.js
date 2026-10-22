@@ -174,11 +174,7 @@ export function createMock({ scenario, log, onHudDismiss, hovered }) {
 
   let pickCount = 0;
   const commands = {
-    get_info() {
-      const snapshot = clone({ ...info, uploads: sorted() });
-      scenario.onInfo?.(mock); // things that happen while the page waits for the answer
-      return snapshot;
-    },
+    get_info: () => clone({ ...info, uploads: sorted() }),
     set_server_url({ url }) {
       url = url.trim().replace(/\/+$/, '');
       if (!/^https:\/\/[^\s/]+$/.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(url)) {

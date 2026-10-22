@@ -1,7 +1,6 @@
 // Preview scenarios, selected with ?s=<name>. Each sets up the mock and optionally drives the UI.
 //   info / settings / uploads / hud / connection: initial mock state
 //   act(doc, mock): runs once the page has rendered; hover: a selector shown in its :hover state
-//   onInfo(mock): runs while the page waits for get_info (events the page must not miss)
 const settingsView = (doc, mock) => mock.emit('navigate', { view: 'settings' });
 const later = (ms) => new Promise((r) => setTimeout(r, ms));
 const key = (el, init) => el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }));
@@ -78,11 +77,6 @@ export const SCENARIOS = {
       el.click();
       key(el, { key: '#', code: 'Digit3', shiftKey: true, metaKey: true });
     },
-  },
-  // Cold start: an upload finishes and the tray asks for Settings while the window reads its first state.
-  'cold-start': {
-    uploads: (fx) => [{ ...fx.uploading, sent: fx.uploading.size }, ...fx.done],
-    onInfo: (mock) => { mock.complete(mock.fx.uploading.id); mock.emit('navigate', { view: 'settings' }); },
   },
   linux: { info: { platform: 'linux' } },
   wayland: { info: { platform: 'linux', shortcutSupported: false }, act: settingsView },
