@@ -46,8 +46,8 @@ pub fn drain_early(app: &AppHandle) {
 
 /// `true` when launched to stay in the background: for a capture hotkey bound to
 /// `push --capture`, or as a login item when the tray icon is there to reach Push.
-pub fn launched_hidden(args: &[String], has_tray: bool) -> bool {
-    args.iter().any(|a| a == "--capture" || (a == "--autostart" && has_tray))
+pub fn launched_hidden(args: &[String], tray_visible: bool) -> bool {
+    args.iter().any(|a| a == "--capture" || (a == "--autostart" && tray_visible))
 }
 
 const INBOX_MAX_AGE: Duration = Duration::from_secs(60 * 60);
