@@ -16,8 +16,8 @@ use tokio::sync::{mpsc, oneshot};
 use crate::model::{
     ErrorKind, Kind, Progress, Status, Upload, UploadError, kind_for, new_id, now_ms, sanitize_ext,
 };
-use crate::net::{Api, is_web_url, validate_server_url};
-use crate::transfer::{self, OnSent, POLICY, Sent};
+use crate::net::{Api, OnSent, is_web_url, validate_server_url};
+use crate::transfer::{self, Sent};
 use crate::{Core, preview, store, tray, windows};
 
 /// Longest edge of the inline thumbnail images get while they upload, in pixels (the HUD shows
@@ -492,7 +492,7 @@ async fn run(app: &AppHandle, job: &Job) -> Result<(String, u64), UploadError> {
     }
     let progress = progress_reporter(app, &job.id, total);
     let resume = start == Start::Resume;
-    let url = match transfer::send(&api, &mut file, &job.name, total, resume, &POLICY, &progress).await? {
+    let url = match transfer::send(&api, &mut file, &job.name, total, resume, &progress).await? {
         Sent::Url(url) if is_web_url(&url) => url,
         Sent::Url(_) => return Err(UploadError::new(ErrorKind::Server, "The server sent an invalid link.")),
         Sent::Exists => format!("{base}/i/{}", job.name),
