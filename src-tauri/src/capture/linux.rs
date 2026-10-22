@@ -28,13 +28,7 @@ pub(super) async fn capture(out: &Path) -> Shot {
         Backend::SlurpGrim => slurp_grim(out).await,
         Backend::Maim => pick(Command::new("maim").args(["-s", "-u"]).arg(out), out).await,
         Backend::Scrot => pick(Command::new("scrot").arg("-s").arg(out), out).await,
-        Backend::GnomeScreenshot => {
-            pick(
-                Command::new("gnome-screenshot").args(["-a", "-f"]).arg(out),
-                out,
-            )
-            .await
-        }
+        Backend::GnomeScreenshot => gnome_screenshot(out).await,
         Backend::Portal => portal(out).await,
     }
 }
@@ -87,6 +81,21 @@ async fn pick(cmd: &mut Command, out: &Path) -> Shot {
             Shot::Failed(format!("Couldn’t run {tool}: {e}"))
         }
     }
+}
+
+/// gnome-screenshot runs one instance per session. A later launch hands its arguments to that
+/// instance and exits straight away without a file, so the capture would be lost.
+async fn gnome_screenshot(out: &Path) -> Shot {
+    if bus_name_owned("org.gnome.Screenshot").await.unwrap_or(false) {
+        return Shot::Failed("gnome-screenshot is already open. Close it, then try again.".into());
+    }
+    pick(Command::new("gnome-screenshot").args(["-a", "-f"]).arg(out), out).await
+}
+
+async fn bus_name_owned(name: &str) -> zbus::Result<bool> {
+    let bus = zbus::Connection::session().await?;
+    let dbus = zbus::fdo::DBusProxy::new(&bus).await?;
+    Ok(dbus.name_has_owner(name.try_into()?).await?)
 }
 
 async fn spectacle(out: &Path) -> Shot {
