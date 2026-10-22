@@ -14,6 +14,7 @@ enum Backend {
     SlurpGrim,
     Maim,
     Scrot,
+    GnomeScreenshot,
     Portal,
 }
 
@@ -27,6 +28,13 @@ pub(super) async fn capture(out: &Path) -> Shot {
         Backend::SlurpGrim => slurp_grim(out).await,
         Backend::Maim => pick(Command::new("maim").args(["-s", "-u"]).arg(out), out).await,
         Backend::Scrot => pick(Command::new("scrot").arg("-s").arg(out), out).await,
+        Backend::GnomeScreenshot => {
+            pick(
+                Command::new("gnome-screenshot").args(["-a", "-f"]).arg(out),
+                out,
+            )
+            .await
+        }
         Backend::Portal => portal(out).await,
     }
 }
@@ -48,6 +56,9 @@ fn backend() -> Backend {
         Backend::Maim
     } else if !wayland && !gnome && on_path("scrot") {
         Backend::Scrot
+    } else if !wayland && !gnome && on_path("gnome-screenshot") {
+        // Shipped by Linux Mint. Its portal (xapp) ignores `interactive` and grabs every monitor.
+        Backend::GnomeScreenshot
     } else {
         // GNOME 46+ opens its own screenshot UI here.
         Backend::Portal
