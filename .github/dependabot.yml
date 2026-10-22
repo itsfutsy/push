@@ -1,0 +1,22 @@
+# Keeps the pinned CI actions and the server's base images up to date. Each
+# update waits 7 days after release, so only versions that have settled get
+# proposed. Security updates for every dependency are turned on in the repo
+# settings and skip the wait.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /server
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
