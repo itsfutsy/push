@@ -343,7 +343,7 @@ function onKey(e) {
     }
     return;
   }
-  if (bulk.asking) {
+  if (bulk.phase === 'asking') {
     if (key === 'Escape') { e.preventDefault(); closeBulk(); grid.focus(); }
     return;
   }
@@ -420,19 +420,19 @@ async function copy(id, button) {
 // ---------------------------------------------------------------- deleting several
 
 // The bar at the bottom: shown for more than one selected tile, and for a delete to confirm or in progress.
-const bulk = { asking: false, busy: false, done: 0, total: 0 };
+const bulk = { phase: 'idle', done: 0, total: 0 }; // 'idle' | 'asking' | 'deleting'
 
 function renderBar() {
   const bar = $('selbar');
   const n = state.selection.size;
-  const on = bulk.busy || bulk.asking || n > 1;
+  const on = bulk.phase !== 'idle' || n > 1;
   bar.classList.toggle('on', on);
   bar.inert = !on || !!pv.id;
   if (!on) return;
   let title, sub = '';
-  if (bulk.busy) {
+  if (bulk.phase === 'deleting') {
     title = `Deleting ${Math.min(bulk.done + 1, bulk.total)} of ${bulk.total}…`;
-  } else if (bulk.asking) {
+  } else if (bulk.phase === 'asking') {
     title = n === 1 ? 'Delete this upload?' : `Delete ${n} uploads?`;
     sub = n === 1 ? 'The link stops working.' : 'The links stop working.';
   } else {
@@ -442,20 +442,20 @@ function renderBar() {
   $('sel-title').textContent = title;
   $('sel-sub').textContent = sub;
   $('sel-all').textContent = n === state.order.length ? 'Deselect All' : 'Select All';
-  $('sel-all').hidden = $('sel-delete').hidden = bulk.busy || bulk.asking;
-  $('sel-cancel').hidden = $('sel-really').hidden = !bulk.asking;
+  $('sel-all').hidden = $('sel-delete').hidden = bulk.phase !== 'idle';
+  $('sel-cancel').hidden = $('sel-really').hidden = bulk.phase !== 'asking';
 }
 
 function askBulk() {
-  if (bulk.busy || !state.selection.size) return;
-  bulk.asking = true;
+  if (bulk.phase === 'deleting' || !state.selection.size) return;
+  bulk.phase = 'asking';
   renderBar();
   $('sel-cancel').focus();
 }
 
 function closeBulk() {
-  if (!bulk.asking) return;
-  bulk.asking = false;
+  if (bulk.phase !== 'asking') return;
+  bulk.phase = 'idle';
   renderBar();
 }
 
@@ -463,7 +463,7 @@ function closeBulk() {
 // (most are the server or the token) and leaves what's left selected.
 async function deleteSelected() {
   const ids = state.order.filter((id) => state.selection.has(id));
-  Object.assign(bulk, { asking: false, busy: true, done: 0, total: ids.length });
+  Object.assign(bulk, { phase: 'deleting', done: 0, total: ids.length });
   renderBar();
   grid.focus({ preventScroll: true });
   let error = null;
@@ -479,7 +479,7 @@ async function deleteSelected() {
     }
   };
   await Promise.all(Array.from({ length: Math.min(4, bulk.total) }, worker));
-  bulk.busy = false;
+  bulk.phase = 'idle';
   renderBar();
   if (!error) toast(bulk.total === 1 ? 'Upload deleted' : `${bulk.total} uploads deleted`);
   else toast(bulk.done ? `Deleted ${bulk.done} of ${bulk.total}. ${error}` : error, false);
