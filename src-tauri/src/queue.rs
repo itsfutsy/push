@@ -1,7 +1,7 @@
 //! The upload list and its single FIFO worker: intake, progress, completion,
 //! clipboard batches, cancel, retry and delete.
 
-use std::cmp::Ordering;
+use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -59,7 +59,6 @@ impl Source {
 
 struct Item {
     upload: Upload,
-    seq: u64,
     path: Option<PathBuf>,
     origin: Origin,
     batch: u64,
@@ -93,24 +92,17 @@ pub struct Uploads {
     current: Option<(String, oneshot::Sender<()>)>,
 }
 
-/// In-flight and failed first, then done; newest first within each group.
-fn order(a: &Item, b: &Item) -> Ordering {
-    let done = |i: &Item| i.upload.status == Status::Done;
-    done(a)
-        .cmp(&done(b))
-        .then(b.upload.created_at.cmp(&a.upload.created_at))
-        .then(b.seq.cmp(&a.seq))
-}
-
 impl Uploads {
     /// Starts from the persisted list (newest first).
     pub fn from_done(done: Vec<Upload>) -> Self {
-        let mut uploads = Self::default();
-        for upload in done.into_iter().rev() {
-            let seq = uploads.next();
-            uploads.items.push(Item { upload, seq, path: None, origin: Origin::File, batch: 0, last_attempt: None });
+        Self {
+            items: done
+                .into_iter()
+                .rev()
+                .map(|upload| Item { upload, path: None, origin: Origin::File, batch: 0, last_attempt: None })
+                .collect(),
+            ..Self::default()
         }
-        uploads
     }
 
     fn next(&mut self) -> u64 {
@@ -118,9 +110,10 @@ impl Uploads {
         self.counter
     }
 
+    /// In-flight and failed first, then done; newest first within each group.
     fn sorted(&self) -> Vec<&Item> {
-        let mut items: Vec<&Item> = self.items.iter().collect();
-        items.sort_by(|a, b| order(a, b));
+        let mut items: Vec<&Item> = self.items.iter().rev().collect();
+        items.sort_by_key(|i| (i.upload.status == Status::Done, Reverse(i.upload.created_at)));
         items
     }
 
@@ -163,8 +156,7 @@ impl Uploads {
             if upload.status == Status::Queued {
                 queued.push(upload.id.clone());
             }
-            let seq = self.next();
-            self.items.push(Item { upload, seq, path: Some(path), origin, batch, last_attempt: None });
+            self.items.push(Item { upload, path: Some(path), origin, batch, last_attempt: None });
         }
         queued
     }
