@@ -15,17 +15,16 @@
   --group: rgba(255,255,255,.5); --group-edge: rgba(0,0,0,.07);
   --bg-window: #f2f2f4; --bg-field: #fff; --field-edge: rgba(0,0,0,.14);
   --focus: rgba(0,103,244,.5);
-  --accent: #007aff; --on-accent: #fff;
-  --blue: #0088ff; --green: #34c759; --red: #ff383c; --orange: #ff8d28; --gray: #8e8e93;
+  --accent: #007aff;
+  --green: #34c759; --red: #ff383c; --orange: #ff8d28; --gray: #8e8e93;
   --thumb-edge: rgba(0,0,0,.1);
 
-  --r-window: 16px; --r-hud: 18px; --r-card: 12px; --r-row: 10px; --r-control: 6px; --r-thumb: 4px;
+  --r-hud: 18px; --r-card: 12px; --r-row: 10px; --r-control: 6px; --r-thumb: 4px;
 
   /* Springs sampled from SwiftUI Spring(duration:bounce:) */
   --ease-smooth: linear(0,.068,.208,.363,.505,.625,.721,.796,.852,.894,.924,.946,.962,.974,.982,.987,.991,.994,.996,.997,1);
   --ease-snappy: linear(0,.065,.206,.369,.525,.658,.765,.846,.905,.946,.972,.989,.999,1.004,1.006,1.006,1.006,1.005,1.004,1.003,1);
   --ease-bouncy: linear(0,.084,.268,.476,.665,.816,.923,.992,1.029,1.044,1.045,1.039,1.03,1.021,1.012,1.006,1.002,1,.998,.998,1);
-  --ease-exit: cubic-bezier(.4,0,1,1);
   --dur-smooth: 470ms; --dur-snappy: 385ms; --dur-bouncy: 580ms; --dur-fast: 100ms;
 }
 @media (prefers-color-scheme: dark) { :root {
@@ -37,13 +36,13 @@
   --group: rgba(255,255,255,.045); --group-edge: rgba(255,255,255,.08);
   --bg-window: #232325; --bg-field: rgba(255,255,255,.06); --field-edge: rgba(255,255,255,.12);
   --focus: rgba(26,169,255,.5);
-  --blue: #0091ff; --green: #30d158; --red: #ff4245; --orange: #ff9230; --gray: #98989d;
+  --green: #30d158; --red: #ff4245; --orange: #ff9230; --gray: #98989d;
   --thumb-edge: rgba(255,255,255,.1);
 }}
 @supports (color: -apple-system-label) { :root {
   --label: -apple-system-label; --label-2: -apple-system-secondary-label; --label-3: -apple-system-tertiary-label;
   --label-4: -apple-system-quaternary-label; --label-5: -apple-system-quinary-label; --separator: -apple-system-separator;
-  --blue: -apple-system-blue; --green: -apple-system-green; --red: -apple-system-red; --orange: -apple-system-orange;
+  --green: -apple-system-green; --red: -apple-system-red; --orange: -apple-system-orange;
 }}
 @supports (color: AccentColor) { :root { --accent: AccentColor; } }
 @media (prefers-reduced-motion: reduce) { :root {
@@ -69,6 +68,7 @@ input { -webkit-user-select: text; cursor: text; font: inherit; color: inherit; 
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 0; }
 .num { font-variant-numeric: tabular-nums; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 
 /* Lucide glyphs */
 .i { display: block; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }

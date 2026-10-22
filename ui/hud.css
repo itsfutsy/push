@@ -1,7 +1,5 @@
 /* HUD: 300x64, borderless, native Liquid Glass behind a transparent page (radius 18).
    Thumbnail radius 10 at an 8 inset is concentric with the glass. */
-.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
-
 .hud {
   position: fixed; inset: 0; box-sizing: border-box; padding: 8px 16px 8px 8px; border-radius: var(--r-hud);
   display: flex; align-items: center; gap: 10px; overflow: hidden; opacity: 0;
