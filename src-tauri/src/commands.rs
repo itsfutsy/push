@@ -26,19 +26,19 @@ fn update_settings(app: &AppHandle, change: impl FnOnce(&mut Settings)) -> Resul
 }
 
 #[tauri::command]
-pub async fn get_info(app: AppHandle) -> Result<AppInfo> {
+pub async fn get_info(app: AppHandle) -> AppInfo {
     let core = app.state::<Core>();
     let has_token = core.token.has().await;
     let settings = core.settings.lock().unwrap().clone();
     let uploads = core.uploads.lock().unwrap().list();
-    Ok(AppInfo {
+    AppInfo {
         settings,
         has_token,
         platform: std::env::consts::OS,
         shortcut_supported: capture::shortcut_supported(),
         version: app.package_info().version.to_string(),
         uploads,
-    })
+    }
 }
 
 #[tauri::command]
@@ -60,19 +60,19 @@ pub async fn set_token(app: AppHandle, token: String) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn test_connection(app: AppHandle) -> Result<Connection> {
+pub async fn test_connection(app: AppHandle) -> Connection {
     let core = app.state::<Core>();
     let token = core.token.get().await.ok().flatten();
     let server = core.settings.lock().unwrap().server_url.clone();
     let connection = |status, message: &str| Connection { status, message: message.into() };
     let (Some(token), Ok(base)) = (token, validate_server_url(&server)) else {
-        return Ok(connection(ConnectionStatus::Unconfigured, "Enter a server URL and token."));
+        return connection(ConnectionStatus::Unconfigured, "Enter a server URL and token.");
     };
-    Ok(match Api::new(core.http.clone(), base, token).ping().await {
+    match Api::new(core.http.clone(), base, token).ping().await {
         Ok(204) => connection(ConnectionStatus::Connected, ""),
         Ok(401) => connection(ConnectionStatus::Unauthorized, "The token wasn’t accepted."),
         _ => connection(ConnectionStatus::Unreachable, "The server didn’t respond."),
-    })
+    }
 }
 
 #[tauri::command]
@@ -99,9 +99,8 @@ pub async fn set_launch_at_login(app: AppHandle, enabled: bool) -> Result<Settin
 }
 
 #[tauri::command]
-pub async fn pick_files(app: AppHandle) -> Result<()> {
+pub async fn pick_files(app: AppHandle) {
     intake::pick_files(&app);
-    Ok(())
 }
 
 #[tauri::command]
@@ -132,32 +131,29 @@ pub async fn retry_upload(app: AppHandle, id: String) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn show_main(app: AppHandle, view: View) -> Result<()> {
+pub async fn show_main(app: AppHandle, view: View) {
     windows::show_main(&app);
     windows::navigate(&app, view);
-    Ok(())
 }
 
 #[tauri::command]
-pub async fn show_library(app: AppHandle) -> Result<()> {
+pub async fn show_library(app: AppHandle) {
     windows::show_library(&app);
-    Ok(())
 }
 
 #[tauri::command]
-pub async fn hud_ready(app: AppHandle) -> Result<Option<HudPayload>> {
-    Ok(windows::hud_payload(&app))
+pub async fn hud_ready(app: AppHandle) -> Option<HudPayload> {
+    windows::hud_payload(&app)
 }
 
 #[tauri::command]
-pub async fn hud_hovered(app: AppHandle) -> Result<bool> {
-    Ok(windows::hud_hovered(&app))
+pub async fn hud_hovered(app: AppHandle) -> bool {
+    windows::hud_hovered(&app)
 }
 
 #[tauri::command]
-pub async fn hud_dismiss(app: AppHandle) -> Result<()> {
+pub async fn hud_dismiss(app: AppHandle) {
     windows::hide_hud(&app);
-    Ok(())
 }
 
 #[tauri::command]
