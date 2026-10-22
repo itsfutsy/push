@@ -1,7 +1,9 @@
 //! The global capture shortcut.
 
 use tauri::{AppHandle, Manager};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+#[cfg(target_os = "macos")]
+use tauri_plugin_global_shortcut::Modifiers;
 
 #[cfg(target_os = "macos")]
 use crate::command_keys;
@@ -21,16 +23,17 @@ pub enum Hotkey {
 }
 
 /// Parses an accelerator such as `CommandOrControl+Shift+Digit2`, or `command_keys::ACCELERATOR`
-/// on macOS. Command or Control is required (macOS rejects Option/Shift-only hotkeys, and plain
-/// keys would swallow typing).
+/// on macOS. Any key works, with or without modifiers, except that macOS rejects hotkeys whose
+/// only modifiers are Option or Option and Shift.
 pub fn parse(accelerator: &str) -> Result<Hotkey, String> {
     #[cfg(target_os = "macos")]
     if accelerator == command_keys::ACCELERATOR {
         return Ok(Hotkey::BothCommands);
     }
     let shortcut: Shortcut = accelerator.parse().map_err(|_| "That key can’t be used in a shortcut.".to_owned())?;
-    if !shortcut.mods.intersects(Modifiers::SUPER | Modifiers::CONTROL) {
-        return Err("Include Command or Control in the shortcut.".into());
+    #[cfg(target_os = "macos")]
+    if shortcut.mods.contains(Modifiers::ALT) && !shortcut.mods.intersects(Modifiers::SUPER | Modifiers::CONTROL) {
+        return Err("macOS needs ⌘ or ⌃ in shortcuts that use ⌥.".into());
     }
     Ok(Hotkey::Keys(shortcut))
 }
