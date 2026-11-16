@@ -4,7 +4,7 @@
 
 # Push
 
-**Screenshot. Upload. Link. On your own server.**
+**Screenshot to link in a second, on your own server.**
 
 Press <kbd>⇧</kbd><kbd>⌘</kbd><kbd>2</kbd> (<kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>2</kbd> on Windows and Linux), drag over anything on screen,<br>
 and a link is on your clipboard a second later.<br>

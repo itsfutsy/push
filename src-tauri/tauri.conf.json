@@ -37,7 +37,7 @@
     "active": true,
     "targets": ["app", "dmg", "deb", "appimage"],
     "category": "Utility",
-    "shortDescription": "Private screenshot and file sharing",
+    "shortDescription": "Self-hosted screenshot and file sharing",
     "icon": [
       "icons/32x32.png",
       "icons/64x64.png",
